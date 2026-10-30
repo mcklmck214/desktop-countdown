@@ -120,6 +120,14 @@ OLD_FILES/     历史版本源码与打包产物（仅存档，不参与运行�
 
 - B 站：<https://space.bilibili.com/2061499488>
 - 邮箱：<mcklmck214@outlook.com>
-- 反馈 / 交流 / 征集群：见「关于」页面
+- 爱发电：<https://ifdian.net/a/wmxgj>
+
+## 反馈与交流（QQ 群）
+
+| 群 | 群号 | 加群链接 |
+| --- | --- | --- |
+| 无名小工具反馈群 | 823223052 | <https://qm.qq.com/q/livvSfQFfG> |
+| 无名小工具交流群 | 684287871 | <https://qm.qq.com/q/1Q95hMYAxG> |
+| 无名小工具征集群 | 136476657 | <https://qm.qq.com/q/twudn725CU> |
 
 > 注：本程序部分为 AI 辅助编写。
