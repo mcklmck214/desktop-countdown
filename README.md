@@ -80,6 +80,17 @@ Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈�
 | Ubuntu 24.04 | 已验证，使用打包版 |
 | NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 Beta0.4.py` |
 
+## 下载
+
+| 渠道 | 链接 | 提取码 |
+| --- | --- | --- |
+| GitHub Releases（推荐） | <https://github.com/mcklmck214/desktop-countdown/releases> | 无需 |
+| 蓝奏云 | <https://wwbjl.lanzout.com/b01i5ystif> | `stbw` |
+| EdgeCOS 边缘云 | <https://user.edgecos.com/s/NCxRhxJx> | 无需 |
+| 123 云盘 | <https://1845990486.share.123pan.cn/123pan/APOqTd-sZLFh> | 无需 |
+| 夸克网盘 | <https://pan.quark.cn/s/a979bc4c2900?pwd=nbM1> | `nbM1` |
+| 百度网盘 | <https://pan.baidu.com/s/1vuZrvnPnc2VFf7GtPIIeGQ?pwd=stbw> | `stbw` |
+
 ## 运行
 
 ```bash
