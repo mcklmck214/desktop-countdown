@@ -1,0 +1,9 @@
+.venv/
+.idea/
+__pycache__/
+*.pyc
+OLD_FILES/
+build/
+dist/
+*.spec
+portable.txt
