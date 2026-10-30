@@ -20,7 +20,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 
 from utils import (
-    resource_dir, today, parse_date_str, item_remaining, set_auto_start,
+    app_dir, resource_dir, today, parse_date_str, item_remaining, set_auto_start,
     enable_dpi_awareness, enable_dwm_shadow, enable_rounded_corners,
     clamp_to_work_area,
 )
@@ -1999,15 +1999,24 @@ class ToolboxWindow(tk.Toplevel):
         center_window(self, parent)
         self.grab_set()
 
+    def _find_tool(self, exe):
+        """工具位置：优先 exe 所在目录（单文件打包时才是真正的“程序目录”），
+        其次 _MEIPASS（打包时随程序打入的副本）。"""
+        for here in (app_dir(), resource_dir()):
+            path = os.path.join(here, exe)
+            if os.path.exists(path):
+                return path
+        return None
+
     def _launch(self, exe):
-        here = resource_dir()
-        path = os.path.join(here, exe)
-        if not os.path.exists(path):
+        path = self._find_tool(exe)
+        if path is None:
             messagebox.showwarning(
                 "工具箱",
                 f"未找到「{exe}」\n请把它放在程序同一目录下。",
                 parent=self)
             return
+        here = os.path.dirname(path)
         try:
             subprocess.Popen([path], cwd=here)
         except OSError as exc:
