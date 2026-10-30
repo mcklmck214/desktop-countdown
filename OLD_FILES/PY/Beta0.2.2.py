@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-桌面透明倒计时  Beta 0.2.1
+桌面透明倒计时  Beta 0.2.2
 Python 3.12 + tkinter + pystray + Pillow
 """
 
@@ -35,7 +35,7 @@ except ImportError:
 # --------------------------------------------------------------------------- #
 # 常量
 # --------------------------------------------------------------------------- #
-APP_VERSION = "Beta 0.2.1"
+APP_VERSION = "Beta 0.2.2"
 MAX_DAYS = 1000
 SINGLE_INSTANCE_PORT = 48291
 
