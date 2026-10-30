@@ -2,8 +2,12 @@
 .idea/
 __pycache__/
 *.pyc
-OLD_FILES/
 build/
 dist/
-*.spec
+pyinstaller/
+/Minecraft/
+/.minecraft/
+/PCL/
+/Plain Craft Launcher 2.exe
+/geek.exe
 portable.txt

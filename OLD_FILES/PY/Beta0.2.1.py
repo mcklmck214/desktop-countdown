@@ -95,6 +95,26 @@ def _bootstrap_path():
     return os.path.join(_home(), ".desktop_countdown_dir.json")
 
 
+def _resource_dir():
+    """打包后从 _MEIPASS 取资源，源码运行时从脚本所在目录取。"""
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS",
+                       os.path.dirname(os.path.abspath(sys.executable)))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _launch_command():
+    """开机自启动命令：打包后直接指向 exe；源码运行时优先用 pythonw 避免弹黑窗。"""
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    exe = sys.executable
+    if sys.platform.startswith("win"):
+        quiet = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        if os.path.exists(quiet):
+            exe = quiet
+    return f'"{exe}" "{os.path.abspath(__file__)}"'
+
+
 def get_save_dir():
     bp = _bootstrap_path()
     if os.path.exists(bp):
@@ -199,10 +219,7 @@ def set_auto_start(enable):
                 key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
             name = "DesktopCountdown"
             if enable:
-                exe = sys.executable
-                script = os.path.abspath(__file__)
-                cmd = f'"{exe}" "{script}"'
-                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, cmd)
+                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, _launch_command())
             else:
                 try:
                     winreg.DeleteValue(key, name)
@@ -227,7 +244,7 @@ def set_auto_start(enable):
                         "[Desktop Entry]\n"
                         "Type=Application\n"
                         "Name=桌面倒计时\n"
-                        f"Exec={sys.executable} {os.path.abspath(__file__)}\n"
+                        f"Exec={_launch_command()}\n"
                         "X-GNOME-Autostart-enabled=true\n"
                     )
             except OSError:
@@ -322,11 +339,19 @@ def load_config():
 
 
 def save_config(cfg):
+    path = get_config_path()
+    tmp = path + ".tmp"
     try:
-        with open(get_config_path(), "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
     except OSError as exc:
         print("保存配置失败:", exc, file=sys.stderr)
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
 
 
 # --------------------------------------------------------------------------- #
@@ -474,6 +499,9 @@ class CountdownApp:
         except (TypeError, ValueError):
             alpha = 0.9
         alpha = min(1.0, max(0.15, alpha))
+        if self._is_locked():
+            # 锁定后整体变淡，提示当前不可拖动 / 不可编辑
+            alpha = max(0.15, alpha * 0.6)
         try:
             self.root.attributes("-alpha", alpha)
         except tk.TclError:
@@ -484,6 +512,11 @@ class CountdownApp:
                 self.root.attributes("-transparentcolor", self.bg if use_key else "")
             except tk.TclError:
                 self.bg = BG_DARK
+                try:
+                    self.root.configure(bg=self.bg)
+                except tk.TclError:
+                    pass
+                self._recolor(self.root)
 
         # 更新时钟颜色
         try:
@@ -680,6 +713,7 @@ class CountdownApp:
         try:
             self.root.update_idletasks()
             w = self.root.winfo_reqwidth()
+            h = self.root.winfo_reqheight()
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
         except tk.TclError:
@@ -687,8 +721,8 @@ class CountdownApp:
         x, y = self.cfg.get("x"), self.cfg.get("y")
         if x is None or y is None:
             x, y = sw - w - 40, 60
-        x = max(0, min(int(x), max(0, sw - 60)))
-        y = max(0, min(int(y), max(0, sh - 60)))
+        x = max(0, min(int(x), max(0, sw - w)))
+        y = max(0, min(int(y), max(0, sh - h)))
         self.root.geometry(f"+{x}+{y}")
 
     # ---------------- 托盘 ---------------- #
@@ -719,7 +753,7 @@ class CountdownApp:
             print("托盘启动失败:", exc, file=sys.stderr)
 
     def _load_tray_image(self, size=64):
-        here = os.path.dirname(os.path.abspath(__file__))
+        here = _resource_dir()
         for name in ("image.png", "icon.png", "tray.png"):
             p = os.path.join(here, name)
             if os.path.exists(p):
@@ -1106,8 +1140,12 @@ class TimeItemDialog(tk.Toplevel):
             except ValueError as exc:
                 messagebox.showwarning("提示", str(exc), parent=self)
                 return
-            if (d - today()).days < 0:
+            delta = (d - today()).days
+            if delta < 0:
                 messagebox.showwarning("提示", "目标日期不能早于今天", parent=self)
+                return
+            if delta > MAX_DAYS:
+                messagebox.showwarning("提示", f"距离今天不能超过 {MAX_DAYS} 天", parent=self)
                 return
             data = {"mode": "date", "date": d.isoformat()}
         data["timer_color"] = (self.custom_color
@@ -1453,7 +1491,7 @@ class TimerColorsDialog(tk.Toplevel):
             rf.grid(row=i, column=1, columnspan=2, sticky="w",
                     padx=(12, 0), pady=4)
             tk.Radiobutton(
-                rf, text=f"默认：{label == '今天' and '白' or ''}",
+                rf, text="默认",
                 value="default", variable=var,
                 bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
                 activebackground=BG_PANEL, activeforeground=FG_MAIN,
@@ -1933,15 +1971,14 @@ class AboutWindow(tk.Toplevel):
         add("end", f"{APP_VERSION}\n", "h")
         for line in (
             "· 新增系统托盘图标：左键显示/隐藏，右键完整菜单",
-            "· 主界面改为双击编辑：名称、时间各自独立设置",
+            "· 主界面改为双击编辑，名称、时间各自独立设置",
             "· 移除主窗口右键菜单，所有操作统一走托盘",
-            "· 新增锁定虚化：锁定时主界面变淡，须从托盘解锁",
+            "· 新增锁定须从托盘解锁",
             "· 新增文字单设置 / 时间单设置（含颜色自定义）",
             "· 新增默认计时颜色（今天 / 3天 / 7天 / 30天 / 365天 / 1000天）",
             "· 新增透明度与 RGB 选色器",
             "· 新增开机自启动（Windows）",
             "· 新增存档位置自定义",
-            "· 版本号更新为 Beta 0.2",
         ):
             add("end", line + "\n", "b")
 
