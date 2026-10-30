@@ -52,6 +52,22 @@
 
 ![关于](docs/screenshots/about.png)
 
+### Linux
+
+Ubuntu 24.04（打包版，主界面六档配色 / 设置 / 关于）：
+
+![Ubuntu](docs/screenshots/linux-ubuntu.png)
+
+Kali Linux（打包版，Xfce 桌面，设置与关于窗口）：
+
+![Kali](docs/screenshots/linux-kali.png)
+
+NOI Linux（Ubuntu 20.04 内核，只能用 `python3 Beta0.4.py` 源码运行）：
+
+![NOI Linux](docs/screenshots/linux-noi.png)
+
+Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈现；未安装 `pystray` / `Pillow` 时启动会提示「无法启用系统托盘」，其余功能正常。
+
 ## 系统兼容性
 
 | 系统 | 状态 |
@@ -60,6 +76,9 @@
 | Windows 10 | 已验证 |
 | Windows 8.1 | 已验证 |
 | Windows 7 / Vista | 不支持：单文件版缺少 Python 3.14 运行库依赖，启动报 `python314.dll` 加载失败 |
+| Kali Linux | 已验证，使用打包版 `Beta0.4-linux-x86_64` |
+| Ubuntu 24.04 | 已验证，使用打包版 |
+| NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 Beta0.4.py` |
 
 ## 运行
 
@@ -70,6 +89,7 @@ python Beta0.4.py
 
 - 依赖 `tkinter`（标准库）、`pystray`、`Pillow`（托盘图标；缺失时自动降级为快捷键操作）
 - 启动后不会出现任务栏图标，一切从**系统托盘**开始；托盘不可见时按 `Ctrl+Shift+L` 切换锁定
+- Linux 打包版：从 Releases 下载 `Beta0.4-linux-x86_64`，`chmod +x` 后直接运行（Kali / Ubuntu 24.04 已验证）
 
 ## 文件结构
 
