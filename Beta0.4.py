@@ -81,6 +81,7 @@ RANGE_LABELS = {
 }
 
 BILI_URL = "https://space.bilibili.com/2061499488"
+AFDIAN_URL = "https://ifdian.net/a/wmxgj"
 EMAIL = "mcklmck214@outlook.com"
 QQ_FEEDBACK = ("823223052", "https://qm.qq.com/q/livvSfQFfG", "无名小工具反馈群")
 QQ_CHAT = ("684287871", "https://qm.qq.com/q/1Q95hMYAxG", "无名小工具交流群")
@@ -1916,6 +1917,11 @@ class AboutWindow(tk.Toplevel):
         add("end", "\n", "b")
         add("end", "只是一个学牲罢了。\n", "s")
         add("end", "注：本程序部分为 AI 辅助编写。\n", "s")
+
+        add("end", "支持\n", "h")
+        add("end", "爱发电：", "b")
+        self._insert_link("https://ifdian.net/a/wmxgj", "open", AFDIAN_URL)
+        add("end", "\n", "b")
 
         add("end", "反馈 / 交流\n", "h")
         for label, (number, url, name) in (
