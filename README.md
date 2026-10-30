@@ -20,6 +20,47 @@
 - **单实例检测**：重复启动会提示并退出，不会出现两个窗口抢同一个存档
 - **高分屏友好**：开启 DPI 感知，多显示器按各自工作区还原窗口位置
 
+## 界面
+
+### 主界面
+
+六档剩余天数自动配色，条目按天数升序排列，过期条目沉到底部。
+
+![主界面](docs/screenshots/main-window.png)
+
+### 设置窗口
+
+最顶置、开机自启动、便携模式、文字颜色与大小、存档位置、工具箱、关于。
+
+![设置窗口](docs/screenshots/settings.png)
+
+### 托盘菜单
+
+左键托盘图标显示 / 隐藏主界面，右键打开完整菜单。
+
+![托盘菜单](docs/screenshots/tray-menu.png)
+
+### 工具箱
+
+一键启动下载工具（Plain Craft Launcher）与卸载工具（Geek Uninstaller），后者自动 UAC 提权。
+
+![工具箱](docs/screenshots/toolbox.png)
+
+### 关于
+
+内置更新日志、作者与反馈入口。
+
+![关于](docs/screenshots/about.png)
+
+## 系统兼容性
+
+| 系统 | 状态 |
+| --- | --- |
+| Windows 11 | 已验证，支持系统圆角与 DWM 阴影 |
+| Windows 10 | 已验证 |
+| Windows 8.1 | 已验证 |
+| Windows 7 / Vista | 不支持：单文件版缺少 Python 3.14 运行库依赖，启动报 `python314.dll` 加载失败 |
+
 ## 运行
 
 ```bash
