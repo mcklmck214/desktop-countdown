@@ -1,5 +1,10 @@
 # 无名小工具（Desktop Countdown）
 
+[![Version](https://img.shields.io/github/v/release/mcklmck214/desktop-countdown?label=Version&color=blue)](https://github.com/mcklmck214/desktop-countdown/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)](#系统兼容性)
+[![Bilibili](https://img.shields.io/badge/Bilibili-%E5%9B%9B%E5%A4%A9%E4%B8%8D%E6%99%9A-00A1D6.svg)](https://space.bilibili.com/2061499488)
+[![爱发电](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E4%BD%9C%E8%80%85-946CE6.svg)](https://ifdian.net/a/wmxgj)
+
 一个常驻桌面角落的透明倒计时小工具：一个无边框小窗，同时盯住多个「还有多少天」。
 
 > 当前版本：**Beta 0.4**
