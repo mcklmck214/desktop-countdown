@@ -16,6 +16,18 @@ PORTABLE_FLAG = "portable.txt"
 CONFIG_NAME = ".desktop_countdown.json"
 
 
+def appdata_dir():
+    """应用数据目录：Windows 为 %APPDATA%\\wmxgj，Linux 为 ~/.local/share/wmxgj。"""
+    if sys.platform.startswith("win"):
+        base = os.environ.get("APPDATA") or home_dir()
+    elif sys.platform == "darwin":
+        base = os.path.join(home_dir(), "Library", "Application Support")
+    else:
+        base = (os.environ.get("XDG_DATA_HOME")
+                or os.path.join(home_dir(), ".local", "share"))
+    return os.path.join(base, "wmxgj")
+
+
 def _bootstrap_path():
     return os.path.join(home_dir(), ".desktop_countdown_dir.json")
 
@@ -47,7 +59,7 @@ def _bootstrap_dir():
 def get_save_dir():
     if is_portable():
         return app_dir()
-    return _bootstrap_dir() or home_dir()
+    return _bootstrap_dir() or appdata_dir()
 
 
 def get_config_path():
@@ -96,12 +108,40 @@ def set_portable(enable):
     return new_dir
 
 
+def migrate_legacy_config():
+    """旧版本（Beta 0.4 及以前）把存档放在用户主目录；
+    首次运行新版时把它复制到当前存档位置（保留原文件作备份）。"""
+    new_path = get_config_path()
+    if os.path.exists(new_path):
+        return
+    old_path = os.path.join(home_dir(), CONFIG_NAME)
+    if os.path.abspath(old_path) == os.path.abspath(new_path):
+        return
+    try:
+        if os.path.exists(old_path):
+            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+            shutil.copy2(old_path, new_path)
+            print("已迁移旧存档:", old_path, "->", new_path)
+    except OSError as exc:
+        print("迁移旧存档失败:", exc, file=sys.stderr)
+
+
+def get_log_dir(cfg=None):
+    """日志目录：配置了 log_dir 用之，否则为存档目录下的 logs。"""
+    if cfg and cfg.get("log_dir"):
+        return cfg["log_dir"]
+    return os.path.join(get_save_dir(), "logs")
+
+
 def default_config():
     t = today().isoformat()
     return {
         "alpha": 0.72,
         "font_size": 25,
         "bg_mode": "panel",
+        "win_style": "edge_plate",
+        "edge_color": None,
+        "plate_color": None,
         "style_version": 2,
         "locked": False,
         "topmost": True,
@@ -112,6 +152,7 @@ def default_config():
         "text_color": None,
         "time_color": None,
         "menu_text_color": None,
+        "log_dir": None,
         "timer_colors": {},
         "items": [],
     }
@@ -131,12 +172,20 @@ def load_config():
         return cfg
     for k in ("alpha", "font_size", "bg_mode", "style_version", "locked", "topmost",
               "auto_start", "hidden", "x", "y", "text_color", "time_color",
-              "menu_text_color", "timer_colors"):
+              "menu_text_color", "log_dir", "win_style", "edge_color",
+              "plate_color", "timer_colors"):
         if k in data:
             cfg[k] = data[k]
     # 旧版存档只有 transparent_bg，未迁移时统一按新版默认（深色底板）显示
     if cfg.get("bg_mode") not in ("panel", "transparent"):
         cfg["bg_mode"] = "panel"
+    # 窗口类型（Beta 0.5）：旧档无此键时由 bg_mode 自动映射
+    # panel（有边有底）→ edge_plate；transparent（无边无底）→ none
+    if "win_style" not in data:
+        cfg["win_style"] = ("none" if cfg.get("bg_mode") == "transparent"
+                            else "edge_plate")
+    if cfg.get("win_style") not in ("edge_plate", "edge_only", "none"):
+        cfg["win_style"] = "edge_plate"
     # 仍然是旧默认透明度 0.90 的，跟新默认一起变薄（用户手动调过的不动）
     if "style_version" not in data:
         try:
@@ -156,6 +205,7 @@ def save_config(cfg):
     path = get_config_path()
     tmp = path + ".tmp"
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)

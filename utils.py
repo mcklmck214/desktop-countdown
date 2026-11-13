@@ -5,10 +5,12 @@
 路径定位、日期解析、剩余天数计算、开机自启动。
 """
 
+import logging
 import os
 import re
 import sys
 from datetime import date, datetime, timedelta
+from logging.handlers import RotatingFileHandler
 
 
 def home_dir():
@@ -94,11 +96,12 @@ def _window_hwnd(window):
         return None
 
 
-def enable_dwm_shadow(window):
+def enable_dwm_shadow(window, enable=True):
     """给无边框窗口补回系统级阴影。
 
     做法与 Electron 的 frameless 窗口一致：把 DWM 边框向客户区延伸 1px，
     让系统重新绘制窗口阴影；对 -transparentcolor 的层叠窗口同样有效。
+    enable=False 时把边框延伸量归零（无边无底样式用，去掉阴影轮廓）。
     """
     if not sys.platform.startswith("win"):
         return False
@@ -116,7 +119,8 @@ def enable_dwm_shadow(window):
         hwnd = _window_hwnd(window)
         if not hwnd:
             return False
-        margins = MARGINS(1, 1, 1, 1)
+        m = 1 if enable else 0
+        margins = MARGINS(m, m, m, m)
         ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
             hwnd, ctypes.byref(margins))
         return True
@@ -125,7 +129,7 @@ def enable_dwm_shadow(window):
         return False
 
 
-def enable_rounded_corners(window):
+def enable_rounded_corners(window, enable=True):
     """Windows 11：让无边框窗口使用系统圆角（旧系统静默失败）。"""
     if not sys.platform.startswith("win"):
         return False
@@ -134,11 +138,40 @@ def enable_rounded_corners(window):
         hwnd = _window_hwnd(window)
         if not hwnd:
             return False
-        pref = ctypes.c_int(2)  # DWMWCP_ROUND
+        pref = ctypes.c_int(2 if enable else 1)  # DWMWCP_ROUND / DONOTROUND
         ok = ctypes.windll.dwmapi.DwmSetWindowAttribute(
             hwnd, 33, ctypes.byref(pref), ctypes.sizeof(pref))
         return ok == 0
     except Exception:
+        return False
+
+
+def set_click_through(window, enable):
+    """锁定时让整个窗口鼠标穿透（点击落到下层界面）；非 Windows 优雅跳过。
+
+    通过 WS_EX_TRANSPARENT | WS_EX_LAYERED 扩展样式实现；
+    关闭时只清除 TRANSPARENT 位（LAYERED 交给 Tk 的 -transparentcolor 管理）。
+    """
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+        GWL_EXSTYLE = -20
+        WS_EX_LAYERED = 0x00080000
+        WS_EX_TRANSPARENT = 0x00000020
+        hwnd = _window_hwnd(window)
+        if not hwnd:
+            return False
+        user32 = ctypes.windll.user32
+        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if enable:
+            style |= WS_EX_LAYERED | WS_EX_TRANSPARENT
+        else:
+            style &= ~WS_EX_TRANSPARENT
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        return True
+    except Exception as exc:
+        print("设置鼠标穿透失败:", exc, file=sys.stderr)
         return False
 
 
@@ -265,3 +298,42 @@ def set_auto_start(enable):
                 os.remove(desktop)
             except OSError:
                 pass
+
+
+# --------------------------------------------------------------------------- #
+# 日志（Beta 0.5 新增）
+# --------------------------------------------------------------------------- #
+LOG = logging.getLogger("wmxgj")
+
+
+def _log_callback_exception(self, exc, val, tb):
+    """Tkinter 回调内未捕获异常 → 记入日志。"""
+    LOG.error("界面回调异常: %s", val, exc_info=(exc, val, tb))
+
+
+def _log_excepthook(t, v, tb):
+    """主线程未捕获异常 → 记入日志。"""
+    LOG.error("未捕获异常: %s", v, exc_info=(t, v, tb))
+
+
+def setup_logging(log_dir):
+    """初始化日志：log_dir/无名小工具.log，512KB 滚动保留 2 份，接管未捕获异常。"""
+    LOG.setLevel(logging.INFO)
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        handler = RotatingFileHandler(
+            os.path.join(log_dir, "无名小工具.log"),
+            maxBytes=512 * 1024, backupCount=2, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        LOG.addHandler(handler)
+    except OSError as exc:
+        print("初始化日志失败:", exc, file=sys.stderr)
+        return
+    sys.excepthook = _log_excepthook
+    try:
+        import tkinter as _tk
+        _tk.Tk.report_callback_exception = _log_callback_exception
+    except Exception:
+        pass
+    LOG.info("日志初始化完成：%s", log_dir)
