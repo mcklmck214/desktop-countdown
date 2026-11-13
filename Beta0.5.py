@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 无名小工具  Beta 0.5
-Python 3.12 + tkinter + pystray + Pillow
+Python 3.8+ + tkinter + pystray + Pillow
 """
 
 print("请勿关闭这个窗口(^_^)")      #这行代码在以py文件的方式运行时显示
