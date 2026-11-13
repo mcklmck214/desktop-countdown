@@ -767,11 +767,14 @@ class CountdownApp:
         save_config(self.cfg)
         try:
             self.root.deiconify()
-            self.root.update_idletasks()
+            self.root.update()
             # 钳制回可见工作区，防止窗口停在屏幕外或被任务栏/面板遮挡
             self._restore_position()
+            self.root.update()
             self._apply_bg_and_alpha()
             self.root.lift()
+            # X11 下 deiconify 后立即 geometry 可能被吞，稍后补发一次
+            self.root.after(60, self._restore_position)
             try:
                 self.root.attributes("-topmost", bool(self.cfg.get("topmost", True)))
             except tk.TclError:

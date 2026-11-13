@@ -209,12 +209,44 @@ def monitor_work_area(x, y):
         return None
 
 
+_x11_workarea_cache = None
+
+
+def _x11_workarea():
+    """读取 X11 的 _NET_WORKAREA（已扣除面板/任务栏），返回 (left, top, right, bottom)。
+
+    非 X11 环境、无 xprop 或读取失败返回 None。结果缓存进程内。
+    """
+    global _x11_workarea_cache
+    if _x11_workarea_cache is not None:
+        return _x11_workarea_cache
+    if sys.platform.startswith("win"):
+        return None
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["xprop", "-root", "_NET_WORKAREA"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+        m = re.search(r"_NET_WORKAREA\(CARDINAL\) =\s*(-?\d+),\s*(-?\d+),\s*(\d+),\s*(\d+)", out)
+        if not m:
+            return None
+        left, top, w, h = (int(m.group(i)) for i in range(1, 5))
+        _x11_workarea_cache = (left, top, left + w, top + h)
+        return _x11_workarea_cache
+    except Exception:
+        return None
+
+
 def clamp_to_work_area(x, y, w, h, fallback=None):
     """把窗口位置钳制到所在显示器的工作区内，支持副屏负坐标。
 
-    fallback 为主屏尺寸 (sw, sh)，仅在拿不到显示器信息时使用。
+    Linux 优先使用 _NET_WORKAREA（扣除面板），fallback 为主屏尺寸 (sw, sh)，
+    仅在拿不到显示器信息时使用。
     """
     area = monitor_work_area(x + w // 2, y + h // 2) or monitor_work_area(x, y)
+    if area is None:
+        area = _x11_workarea()
     if area is None:
         if fallback:
             sw, sh = fallback
