@@ -72,7 +72,7 @@ NOI Linux（Ubuntu 20.04 内核，只能用 `python3 Beta0.4.py` 源码运行）
 
 ![NOI Linux](docs/screenshots/linux-noi.png)
 
-Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈现。打包版已内置 `pystray` / `Pillow`，托盘通过 `libayatana-appindicator` 工作；源码运行时才需要自行 `pip install pystray pillow`，缺失会提示「无法启用系统托盘」，其余功能正常。
+Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈现。打包版分两种：**full**（约 123 MB）内置 GTK 托盘依赖，托盘经 `libayatana-appindicator` 正常工作；**lite**（约 22 MB）剔除 GTK，托盘改走 XEmbed 后端，该后端不支持中文托盘提示词，启动托盘时会失败并自动降级为快捷键操作，其余功能不受影响。源码运行需自行 `pip install pystray pillow`，缺失会提示「无法启用系统托盘」，其余功能正常。
 
 ## 系统兼容性
 
@@ -82,7 +82,7 @@ Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈�
 | Windows 10 | 已验证 |
 | Windows 8.1 | 已验证 |
 | Windows 7 / Vista | 不支持：单文件版缺少 Python 3.14 运行库依赖，启动报 `python314.dll` 加载失败 |
-| Kali Linux | 已验证，使用打包版 `Beta0.4-linux-x86_64` |
+| Kali Linux | 已验证，打包版 full / lite 均可运行 |
 | Ubuntu 24.04 | 已验证，使用打包版 |
 | NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 Beta0.4.py` |
 
@@ -106,7 +106,7 @@ python Beta0.4.py
 
 - 依赖 `tkinter`（标准库）、`pystray`、`Pillow`（托盘图标；缺失时自动降级为快捷键操作）
 - 启动后不会出现任务栏图标，一切从**系统托盘**开始；托盘不可见时按 `Ctrl+Shift+L` 切换锁定
-- Linux 打包版：从 Releases 下载 `Beta0.4-linux-x86_64`，`chmod +x` 后直接运行（Kali / Ubuntu 24.04 已验证）
+- Linux 打包版：Releases 提供 **full**（含 GTK 托盘依赖，约 123 MB）与 **lite**（精简版，托盘不可用自动降级，约 22 MB）两种，`chmod +x` 后直接运行（Kali / Ubuntu 24.04 已验证）
 
 ## 文件结构
 
