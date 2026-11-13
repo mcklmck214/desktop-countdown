@@ -650,8 +650,6 @@ class CountdownApp:
         menu = pystray.Menu(
             pystray.MenuItem("显示/隐藏", self._tray_toggle_show, default=True),
             pystray.MenuItem("新增倒计时", self._tray_add),
-            pystray.MenuItem("隐藏倒计时", self._tray_hide),
-            pystray.MenuItem("显示倒计时", self._tray_show),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("锁定", self._tray_toggle_lock,
                              checked=lambda it: bool(self.cfg.get("locked", False))),
@@ -692,12 +690,6 @@ class CountdownApp:
     def _tray_add(self, icon=None, item=None):
         self._tray_queue.put(self._open_add_dialog)
 
-    def _tray_hide(self, icon=None, item=None):
-        self._tray_queue.put(self._hide_window)
-
-    def _tray_show(self, icon=None, item=None):
-        self._tray_queue.put(self._show_window)
-
     def _tray_toggle_lock(self, icon=None, item=None):
         self._tray_queue.put(self._toggle_lock)
 
@@ -731,6 +723,11 @@ class CountdownApp:
             self._hide_window()
 
     def _hide_window(self):
+        try:
+            self.cfg["x"] = self.root.winfo_x()
+            self.cfg["y"] = self.root.winfo_y()
+        except tk.TclError:
+            pass
         self._hidden = True
         self.cfg["hidden"] = True
         save_config(self.cfg)
@@ -745,7 +742,16 @@ class CountdownApp:
         save_config(self.cfg)
         try:
             self.root.deiconify()
+            self.root.update_idletasks()
+            # 钳制回可见工作区，防止窗口停在屏幕外或被任务栏/面板遮挡
+            self._restore_position()
+            self._apply_bg_and_alpha()
             self.root.lift()
+            try:
+                self.root.attributes("-topmost", bool(self.cfg.get("topmost", True)))
+            except tk.TclError:
+                pass
+            self.root.focus_force()
         except tk.TclError:
             pass
 
