@@ -44,7 +44,7 @@ except ImportError:
 # --------------------------------------------------------------------------- #
 # 常量
 # --------------------------------------------------------------------------- #
-APP_VERSION = "Beta 0.5"
+APP_VERSION = "Beta 0.6"
 MAX_DAYS = 1000
 SINGLE_INSTANCE_PORT = 48291
 
@@ -85,6 +85,7 @@ BILI_URL = "https://space.bilibili.com/2061499488"
 AFDIAN_URL = "https://ifdian.net/a/wmxgj"
 QQ_FEEDBACK = ("823223052", "https://qm.qq.com/q/livvSfQFfG", "无名小工具反馈群")
 QQ_CHAT = ("684287871", "https://qm.qq.com/q/1Q95hMYAxG", "无名小工具交流群")
+GITHUB_URL = "https://github.com/mcklmck214/desktop-countdown"
 
 if sys.platform.startswith("win"):
     UI_FONT = "Microsoft YaHei UI"
@@ -94,6 +95,64 @@ else:
     UI_FONT = "Noto Sans CJK SC"
 
 WEEKDAY_CN = ("一", "二", "三", "四", "五", "六", "日")
+
+# --------------------------------------------------------------------------- #
+# 进程检测（Beta 0.6 自动隐藏）
+# --------------------------------------------------------------------------- #
+def list_running_processes():
+    """返回当前运行的进程名集合（小写，纯标准库实现，跨平台）。"""
+    names = set()
+    try:
+        if sys.platform.startswith("win"):
+            # Windows: tasklist /nh /fo csv，输出为 gbk 编码
+            out = subprocess.run(
+                ["tasklist", "/nh", "/fo", "csv"],
+                capture_output=True, creationflags=0x08000000,
+            ).stdout
+            text = out.decode("gbk", errors="ignore")
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or line.startswith('"') is False:
+                    continue
+                # CSV 第一列是进程名，带引号
+                parts = line.split('","')
+                if parts:
+                    name = parts[0].lstrip('"').rstrip('"')
+                    if name:
+                        names.add(name.lower())
+        else:
+            # Linux / macOS: 遍历 /proc 或 ps
+            if os.path.isdir("/proc"):
+                for entry in os.listdir("/proc"):
+                    if not entry.isdigit():
+                        continue
+                    try:
+                        with open(os.path.join("/proc", entry, "comm"), "r") as f:
+                            comm = f.read().strip()
+                        if comm:
+                            names.add(comm.lower())
+                    except OSError:
+                        continue
+            else:
+                out = subprocess.run(
+                    ["ps", "-eo", "comm="], capture_output=True, text=True,
+                ).stdout
+                for line in out.splitlines():
+                    comm = line.strip()
+                    if comm:
+                        names.add(comm.lower())
+    except Exception:
+        pass
+    return names
+
+
+def any_process_running(app_names):
+    """app_names 为进程名列表（大小写不敏感），任一在运行返回 True。"""
+    if not app_names:
+        return False
+    running = list_running_processes()
+    targets = {n.lower() for n in app_names if n}
+    return bool(running & targets)
 
 
 # --------------------------------------------------------------------------- #
@@ -215,6 +274,7 @@ class CountdownApp:
         self._first_launch = not os.path.exists(get_config_path())
         self.cfg = load_config()
         self._hidden = bool(self.cfg.get("hidden", False))
+        self._auto_hidden = False  # Beta 0.6：标记是否由自动隐藏机制隐藏
         self._drag_anchor = None
         self.settings_win = None
         self.about_win = None
@@ -251,6 +311,7 @@ class CountdownApp:
         self._tick()
         self._start_tray()
         self.root.after(80, self._poll_tray_queue)
+        self.root.after(2000, self._auto_hide_check)  # Beta 0.6
 
         if not HAS_TRAY:
             self.root.bind("<Control-Shift-L>", lambda e: self._toggle_lock())
@@ -683,6 +744,7 @@ class CountdownApp:
             pystray.MenuItem("设置", self._tray_settings),
             pystray.MenuItem("使用引导", self._tray_guide),
             pystray.MenuItem("工具箱", self._tray_toolbox),
+            pystray.MenuItem("关于", self._tray_about),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("关闭程序", self._tray_quit),
         )
@@ -730,6 +792,9 @@ class CountdownApp:
     def _tray_toolbox(self, icon=None, item=None):
         self._tray_queue.put(self.open_toolbox)
 
+    def _tray_about(self, icon=None, item=None):
+        self._tray_queue.put(self.open_about)
+
     def _tray_quit(self, icon=None, item=None):
         self._tray_queue.put(self.quit_app)
 
@@ -742,18 +807,21 @@ class CountdownApp:
 
     # ---------------- 状态动作 ---------------- #
     def _toggle_visibility(self):
+        # 用户手动切换：清除自动隐藏标记，避免被自动逻辑立即拉回
+        self._auto_hidden = False
         if self._hidden:
             self._show_window()
         else:
             self._hide_window()
 
-    def _hide_window(self):
+    def _hide_window(self, auto=False):
         try:
             self.cfg["x"] = self.root.winfo_x()
             self.cfg["y"] = self.root.winfo_y()
         except tk.TclError:
             pass
         self._hidden = True
+        self._auto_hidden = bool(auto)
         self.cfg["hidden"] = True
         save_config(self.cfg)
         try:
@@ -763,6 +831,7 @@ class CountdownApp:
 
     def _show_window(self):
         self._hidden = False
+        self._auto_hidden = False
         self.cfg["hidden"] = False
         save_config(self.cfg)
         try:
@@ -780,6 +849,26 @@ class CountdownApp:
             except tk.TclError:
                 pass
             self.root.focus_force()
+        except tk.TclError:
+            pass
+
+    # ---------------- 自动隐藏（Beta 0.6） ---------------- #
+    def _auto_hide_check(self):
+        """轮询检测名单中的进程是否运行，据此自动隐藏/显示窗口。"""
+        try:
+            ah = self.cfg.get("auto_hide", {})
+            if ah.get("enabled"):
+                running = any_process_running(ah.get("apps", []))
+                if running and not self._hidden:
+                    # 名单中有程序在运行 且 当前显示 → 自动隐藏
+                    self._hide_window(auto=True)
+                elif (not running) and self._hidden and self._auto_hidden:
+                    # 名单中无程序运行 且 之前是被自动隐藏的 → 自动恢复显示
+                    self._show_window()
+        except Exception as exc:
+            print("自动隐藏检测异常:", exc, file=sys.stderr)
+        try:
+            self.root.after(3000, self._auto_hide_check)
         except tk.TclError:
             pass
 
@@ -1966,6 +2055,11 @@ class AboutWindow(tk.Toplevel):
             self._insert_link(f"点击加入群聊【{name}】", "open", url)
             add("end", "\n", "b")
 
+        add("end", "源码\n", "h")
+        add("end", "GitHub：", "b")
+        self._insert_link(GITHUB_URL, "open", GITHUB_URL)
+        add("end", "\n", "b")
+
     def _on_link(self, mode, payload):
         if mode == "copy":
             try:
@@ -2070,6 +2164,139 @@ class ToolboxWindow(tk.Toplevel):
 
 
 # --------------------------------------------------------------------------- #
+# 自动隐藏设置窗口（Beta 0.6）
+# --------------------------------------------------------------------------- #
+class AutoHideSettingsWindow(tk.Toplevel):
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.app = app
+        self.ah = app.cfg.setdefault("auto_hide", {"enabled": False, "apps": []})
+
+        self.title("自动隐藏设置")
+        self.configure(bg=BG_PANEL)
+        self.resizable(False, False)
+        try:
+            self.transient(app.root)
+            self.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+        self._build()
+        center_window(self, app.root)
+        self.grab_set()
+
+    def _build(self):
+        body = tk.Frame(self, bg=BG_PANEL)
+        body.pack(fill="both", expand=True, padx=16, pady=14)
+
+        # 启用开关
+        row_en = tk.Frame(body, bg=BG_PANEL)
+        row_en.pack(fill="x", pady=(0, 8))
+        tk.Label(row_en, text="启用自动隐藏", bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=12, anchor="w").pack(side="left")
+        self.enabled_var = tk.StringVar(
+            value="on" if self.ah.get("enabled") else "off")
+        for t, v in (("关", "off"), ("开", "on")):
+            tk.Radiobutton(
+                row_en, text=t, value=v, variable=self.enabled_var,
+                command=self._toggle_enabled,
+                bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
+                activebackground=BG_PANEL, activeforeground=FG_MAIN,
+                font=(UI_FONT, 10), bd=0, highlightthickness=0,
+            ).pack(side="left", padx=(8, 0))
+
+        tk.Label(body, text="当以下任一程序运行时，自动隐藏倒计时：",
+                 bg=BG_PANEL, fg=FG_SUB, font=(UI_FONT, 9)).pack(anchor="w")
+
+        # 名单列表
+        list_frame = tk.Frame(body, bg=BG_PANEL)
+        list_frame.pack(fill="both", expand=True, pady=6)
+        self.listbox = tk.Listbox(
+            list_frame, height=8, width=32,
+            bg=ENTRY_BG, fg=FG_MAIN, selectbackground=ACCENT,
+            selectforeground="#000000", font=(UI_FONT, 10),
+            bd=0, highlightthickness=1, highlightcolor=ACCENT,
+            highlightbackground=GLASS_EDGE, activestyle="none")
+        self.listbox.pack(side="left", fill="both", expand=True)
+        sb = tk.Scrollbar(list_frame, command=self.listbox.yview)
+        sb.pack(side="right", fill="y")
+        self.listbox.config(yscrollcommand=sb.set)
+        self._refresh_list()
+
+        # 添加 / 删除
+        row_op = tk.Frame(body, bg=BG_PANEL)
+        row_op.pack(fill="x", pady=(8, 4))
+        self.entry = tk.Entry(
+            row_op, bg=ENTRY_BG, fg=FG_MAIN, insertbackground=FG_MAIN,
+            font=(UI_FONT, 10), bd=0, highlightthickness=1,
+            highlightcolor=ACCENT, highlightbackground=GLASS_EDGE)
+        self.entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.entry.bind("<Return>", lambda e: self._add_app())
+        make_button(row_op, "添加", self._add_app).pack(side="left")
+
+        row_del = tk.Frame(body, bg=BG_PANEL)
+        row_del.pack(fill="x", pady=2)
+        make_button(row_del, "删除选中", self._remove_app).pack(side="left")
+        make_button(row_del, "清空", self._clear_apps).pack(side="left", padx=(6, 0))
+
+        # 提示
+        tk.Label(body,
+                 text="提示：填写进程名，如 notepad.exe、chrome.exe\n"
+                      "（不含路径，大小写不敏感）",
+                 bg=BG_PANEL, fg=FG_SUB, font=(UI_FONT, 8),
+                 justify="left").pack(anchor="w", pady=(6, 0))
+
+        btns = tk.Frame(body, bg=BG_PANEL)
+        btns.pack(fill="x", pady=(12, 0))
+        make_button(btns, "完成", self._close, primary=True).pack(side="right")
+
+        self.bind("<Escape>", lambda e: self._close())
+
+    def _refresh_list(self):
+        self.listbox.delete(0, tk.END)
+        for name in self.ah.get("apps", []):
+            self.listbox.insert(tk.END, name)
+
+    def _toggle_enabled(self):
+        self.ah["enabled"] = (self.enabled_var.get() == "on")
+        save_config(self.app.cfg)
+
+    def _add_app(self):
+        name = self.entry.get().strip()
+        if not name:
+            return
+        if name not in self.ah["apps"]:
+            self.ah["apps"].append(name)
+            save_config(self.app.cfg)
+            self._refresh_list()
+        self.entry.delete(0, tk.END)
+
+    def _remove_app(self):
+        sel = self.listbox.curselection()
+        if not sel:
+            return
+        name = self.listbox.get(sel[0])
+        if name in self.ah["apps"]:
+            self.ah["apps"].remove(name)
+            save_config(self.app.cfg)
+            self._refresh_list()
+
+    def _clear_apps(self):
+        if self.ah["apps"]:
+            self.ah["apps"] = []
+            save_config(self.app.cfg)
+            self._refresh_list()
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        self.destroy()
+
+
+# --------------------------------------------------------------------------- #
 # 主设置窗口
 # --------------------------------------------------------------------------- #
 class SettingsWindow(tk.Toplevel):
@@ -2169,6 +2396,8 @@ class SettingsWindow(tk.Toplevel):
 
         make_button(body, "文字设置", self._open_text_settings).pack(
             fill="x", pady=3)
+        make_button(body, "自动隐藏设置", self._open_auto_hide).pack(
+            fill="x", pady=3)
 
         # 存档位置
         row3 = tk.Frame(body, bg=BG_PANEL)
@@ -2261,6 +2490,13 @@ class SettingsWindow(tk.Toplevel):
 
     def _open_text_settings(self):
         self.app.open_text_settings()
+        try:
+            self.lift()
+        except tk.TclError:
+            pass
+
+    def _open_auto_hide(self):
+        AutoHideSettingsWindow(self.app)
         try:
             self.lift()
         except tk.TclError:

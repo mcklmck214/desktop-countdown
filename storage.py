@@ -155,6 +155,7 @@ def default_config():
         "log_dir": None,
         "timer_colors": {},
         "items": [],
+        "auto_hide": {"enabled": False, "apps": []},
     }
 
 
@@ -198,6 +199,16 @@ def load_config():
             it for it in data["items"]
             if isinstance(it, dict) and it.get("name") and it.get("mode") in ("days", "date")
         ]
+    # Beta 0.6：自动隐藏名单
+    ah = data.get("auto_hide")
+    if isinstance(ah, dict):
+        apps = ah.get("apps")
+        if isinstance(apps, list):
+            cfg["auto_hide"]["apps"] = [
+                str(a).strip() for a in apps if isinstance(a, str) and a.strip()
+            ]
+        if isinstance(ah.get("enabled"), bool):
+            cfg["auto_hide"]["enabled"] = ah["enabled"]
     return cfg
 
 
