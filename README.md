@@ -72,7 +72,7 @@ NOI Linux（Ubuntu 20.04 内核，只能用 `python3 Beta0.4.py` 源码运行）
 
 ![NOI Linux](docs/screenshots/linux-noi.png)
 
-Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈现；未安装 `pystray` / `Pillow` 时启动会提示「无法启用系统托盘」，其余功能正常。
+Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈现。打包版已内置 `pystray` / `Pillow`，托盘通过 `libayatana-appindicator` 工作；源码运行时才需要自行 `pip install pystray pillow`，缺失会提示「无法启用系统托盘」，其余功能正常。
 
 ## 系统兼容性
 
