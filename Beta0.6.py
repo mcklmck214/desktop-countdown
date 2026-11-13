@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-无名小工具  Beta 0.5
+无名小工具  Beta 0.6
 Python 3.8+ + tkinter + pystray + Pillow
 """
 
