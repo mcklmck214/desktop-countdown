@@ -8,7 +8,9 @@
 
 一个常驻桌面角落的透明倒计时小工具：一个无边框小窗，同时盯住多个「还有多少天」。
 
-> 当前版本：**Beta 0.4**
+**语言：** **简体中文** | [English](README.en.md) | [日本語](README.ja.md)
+
+> 当前版本：**Beta 0.7**
 
 ## 功能
 
@@ -58,6 +60,36 @@
 
 ![关于](docs/screenshots/about.png)
 
+### 多语言界面
+
+支持中文 / English / 日本語，可在「设置 → 语言」中切换，重启程序后完全生效。
+
+<details>
+<summary>English</summary>
+
+| 主界面 | 托盘菜单 | 工具箱 |
+|---|---|---|
+| ![Main](docs/screenshots/i18n/en/main-window.png) | ![Menu](docs/screenshots/i18n/en/tray-menu.png) | ![Toolbox](docs/screenshots/i18n/en/toolbox.png) |
+
+| 设置 | 关于 |
+|---|---|
+| ![Settings](docs/screenshots/i18n/en/settings.png) | ![About](docs/screenshots/i18n/en/about.png) |
+
+</details>
+
+<details>
+<summary>日本語</summary>
+
+| メイン画面 | 右クリックメニュー | ツールボックス |
+|---|---|---|
+| ![メイン](docs/screenshots/i18n/ja/main-window.png) | ![メニュー](docs/screenshots/i18n/ja/tray-menu.png) | ![ツール](docs/screenshots/i18n/ja/toolbox.png) |
+
+| 設定 | このアプリについて |
+|---|---|
+| ![設定](docs/screenshots/i18n/ja/settings.png) | ![このアプリについて](docs/screenshots/i18n/ja/about.png) |
+
+</details>
+
 ### Linux
 
 Ubuntu 24.04（打包版，主界面六档配色 / 设置 / 关于）：
@@ -68,7 +100,7 @@ Kali Linux（打包版，Xfce 桌面，设置与关于窗口）：
 
 ![Kali](docs/screenshots/linux-kali.png)
 
-NOI Linux（Ubuntu 20.04 内核，只能用 `python3 Beta0.4.py` 源码运行）：
+NOI Linux（Ubuntu 20.04 内核，只能用 `python3 wmxgj_Beta0_7.py` 源码运行）：
 
 ![NOI Linux](docs/screenshots/linux-noi.png)
 
@@ -81,10 +113,10 @@ Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈�
 | Windows 11 | 已验证，支持系统圆角与 DWM 阴影 |
 | Windows 10 | 已验证 |
 | Windows 8.1 | 已验证 |
-| Windows 7 / Vista | 不支持：单文件版缺少 Python 3.14 运行库依赖，启动报 `python314.dll` 加载失败 |
+| Windows 7 / Vista | Windows 7 已验证（Beta 0.7，Python 3.8 打包，64 位）；Vista 未测试 |
 | Kali Linux | 已验证，打包版 full / lite 均可运行 |
 | Ubuntu 24.04 | 已验证，使用打包版 |
-| NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 Beta0.4.py` |
+| NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 wmxgj_Beta0_7.py` |
 
 ## 下载
 
@@ -101,7 +133,7 @@ Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈�
 
 ```bash
 pip install pystray pillow
-python Beta0.4.py
+python wmxgj_Beta0_7.py
 ```
 
 - 依赖 `tkinter`（标准库）、`pystray`、`Pillow`（托盘图标；缺失时自动降级为快捷键操作）
@@ -111,11 +143,12 @@ python Beta0.4.py
 ## 文件结构
 
 ```
-Beta0.4.py     主程序：窗口、菜单、对话框、托盘、单实例
-utils.py       通用工具：路径、日期、DPI、DWM 阴影/圆角、多屏工作区、开机自启
-storage.py     配置读写：存档路径、原子写入、便携模式
-image.png      托盘图标
-OLD_FILES/     历史版本源码与打包产物（仅存档，不参与运行）
+wmxgj_Beta0_7.py  主程序：窗口、菜单、对话框、托盘、单实例
+utils.py          通用工具：路径、日期、DPI、DWM 阴影/圆角、多屏工作区、开机自启
+storage.py        配置读写：存档路径、原子写入、便携模式
+lang.json         界面翻译（zh / en / ja）
+image.png         托盘图标
+OLD_FILES/        历史版本源码与打包产物（仅存档，不参与运行）
 ```
 
 ## 存档位置
@@ -128,6 +161,9 @@ OLD_FILES/     历史版本源码与打包产物（仅存档，不参与运行�
 
 | 版本 | 主要内容 |
 | --- | --- |
+| Beta 0.7 | 多语言界面（中/英/日）、设置内语言切换、更新日志扩充、Linux 托盘标题降级 |
+| Beta 0.6 | 按应用名单自动隐藏、设置页名单管理、Win7 兼容打包 |
+| Beta 0.5 | 关于页 GitHub 链接、Linux full/lite 打包 |
 | Beta 0.4 | 右键菜单、自动排序、拆出 utils/storage、便携模式、DPI 感知、多显示器、DWM 阴影与圆角、深色半透明底板 |
 | Beta 0.3 | 单实例检测、工具箱、锁定变淡、打包路径适配、配置原子写入 |
 | Beta 0.2.1 | 系统托盘、双击编辑、分档计时色、RGB 选色、开机自启、存档位置自定义 |
@@ -145,6 +181,5 @@ OLD_FILES/     历史版本源码与打包产物（仅存档，不参与运行�
 | --- | --- | --- |
 | 无名小工具反馈群 | 823223052 | <https://qm.qq.com/q/livvSfQFfG> |
 | 无名小工具交流群 | 684287871 | <https://qm.qq.com/q/1Q95hMYAxG> |
-| 无名小工具征集群 | 136476657 | <https://qm.qq.com/q/twudn725CU> |
 
 > 注：本程序部分为 AI 辅助编写。

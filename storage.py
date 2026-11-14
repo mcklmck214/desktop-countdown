@@ -156,6 +156,7 @@ def default_config():
         "timer_colors": {},
         "items": [],
         "auto_hide": {"enabled": False, "apps": []},
+        "language": "zh",
     }
 
 
@@ -174,7 +175,7 @@ def load_config():
     for k in ("alpha", "font_size", "bg_mode", "style_version", "locked", "topmost",
               "auto_start", "hidden", "x", "y", "text_color", "time_color",
               "menu_text_color", "log_dir", "win_style", "edge_color",
-              "plate_color", "timer_colors"):
+              "plate_color", "timer_colors", "language"):
         if k in data:
             cfg[k] = data[k]
     # 旧版存档只有 transparent_bg，未迁移时统一按新版默认（深色底板）显示
@@ -209,6 +210,9 @@ def load_config():
             ]
         if isinstance(ah.get("enabled"), bool):
             cfg["auto_hide"]["enabled"] = ah["enabled"]
+    # Beta 0.7：多语言，无效值回退 zh
+    if cfg.get("language") not in ("zh", "en", "ja"):
+        cfg["language"] = "zh"
     return cfg
 
 

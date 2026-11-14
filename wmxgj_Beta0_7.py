@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-无名小工具  Beta 0.6
+无名小工具  Beta 0.7
 Python 3.8+ + tkinter + pystray + Pillow
 """
 
@@ -44,7 +44,9 @@ except ImportError:
 # --------------------------------------------------------------------------- #
 # 常量
 # --------------------------------------------------------------------------- #
-APP_VERSION = "Beta 0.6"
+APP_VERSION = "Beta 0.7"
+APP_NAME = "无名小工具"
+AUTHOR_NAME = "四天不晚"
 MAX_DAYS = 1000
 SINGLE_INSTANCE_PORT = 48291
 
@@ -72,14 +74,6 @@ DEFAULT_COLORS = {
     "1000": "#ffffff",
 }
 RANGE_KEYS = ["today", "3", "7", "30", "365", "1000"]
-RANGE_LABELS = {
-    "today": "今天",
-    "3": "3 天内",
-    "7": "7 天内",
-    "30": "30 天内",
-    "365": "365 天内",
-    "1000": "1000 天内",
-}
 
 BILI_URL = "https://space.bilibili.com/2061499488"
 AFDIAN_URL = "https://ifdian.net/a/wmxgj"
@@ -95,6 +89,77 @@ else:
     UI_FONT = "Noto Sans CJK SC"
 
 WEEKDAY_CN = ("一", "二", "三", "四", "五", "六", "日")
+
+
+# --------------------------------------------------------------------------- #
+# 资源路径 & 多语言
+# --------------------------------------------------------------------------- #
+def get_resource_path(relative_path):
+    """兼容 PyInstaller 单文件打包后的临时路径。"""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
+class LanguageManager:
+    """多语言管理器：从 lang.json 加载 zh / en / ja 三语文案。"""
+
+    SUPPORTED = ("zh", "en", "ja")
+    _instance = None
+
+    def __init__(self, lang="zh"):
+        self._data = {}
+        self._lang = lang if lang in self.SUPPORTED else "zh"
+        self._load()
+
+    @classmethod
+    def instance(cls, lang=None):
+        if cls._instance is None:
+            cls._instance = cls(lang or "zh")
+        elif lang is not None:
+            cls._instance.set_language(lang)
+        return cls._instance
+
+    def _load(self):
+        path = get_resource_path("lang.json")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                import json
+                self._data = json.load(f)
+        except Exception as exc:
+            print(f"[LanguageManager] 加载 lang.json 失败: {exc}", file=sys.stderr)
+            self._data = {}
+
+    def set_language(self, lang):
+        if lang in self.SUPPORTED:
+            self._lang = lang
+
+    @property
+    def language(self):
+        return self._lang
+
+    def get(self, key, **kwargs):
+        """取翻译文案，支持 {placeholder} 格式化；缺失时回退 zh，再回退 key。"""
+        text = self._data.get(self._lang, {}).get(key)
+        if text is None:
+            text = self._data.get("zh", {}).get(key)
+        if text is None:
+            text = key
+        if kwargs:
+            try:
+                text = text.format(**kwargs)
+            except (KeyError, IndexError):
+                pass
+        return text
+
+    def get_list(self, key):
+        """取列表型文案（如 guide_steps）。"""
+        value = self._data.get(self._lang, {}).get(key)
+        if value is None:
+            value = self._data.get("zh", {}).get(key)
+        if not isinstance(value, list):
+            return []
+        return value
 
 # --------------------------------------------------------------------------- #
 # 进程检测（Beta 0.6 自动隐藏）
@@ -273,6 +338,7 @@ class CountdownApp:
         # 存档文件不存在即视为第一次启动
         self._first_launch = not os.path.exists(get_config_path())
         self.cfg = load_config()
+        self._lang_mgr = LanguageManager.instance(self.cfg.get("language", "zh"))
         self._hidden = bool(self.cfg.get("hidden", False))
         self._auto_hidden = False  # Beta 0.6：标记是否由自动隐藏机制隐藏
         self._drag_anchor = None
@@ -290,7 +356,7 @@ class CountdownApp:
         self._purge_declined = set()
 
         self.root = tk.Tk()
-        self.root.title("无名小工具")
+        self.root.title(self._lang_mgr.get("app_title"))
         self.root.overrideredirect(True)
         try:
             self.root.attributes("-topmost", bool(self.cfg.get("topmost", True)))
@@ -328,6 +394,11 @@ class CountdownApp:
             self.root.after(400, self.open_guide)
 
     # ---------------- 基础 ---------------- #
+    @property
+    def lang(self):
+        """取翻译文案的快捷方式：self.lang("key", **kwargs)。"""
+        return self._lang_mgr.get
+
     def _refresh_days_basis(self):
         t = today().isoformat()
         changed = False
@@ -420,17 +491,17 @@ class CountdownApp:
             activebackground=BTN_HOVER, activeforeground=fg,
             bd=0, font=(UI_FONT, 10),
         )
-        m.add_command(label="新增倒计时", command=self._open_add_dialog)
-        m.add_command(label="设置", command=self.open_settings)
-        m.add_command(label="使用引导", command=self.open_guide)
-        m.add_command(label="工具箱", command=self.open_toolbox)
-        m.add_command(label="关于", command=self.open_about)
+        m.add_command(label=self.lang("add_countdown"), command=self._open_add_dialog)
+        m.add_command(label=self.lang("settings"), command=self.open_settings)
+        m.add_command(label=self.lang("guide"), command=self.open_guide)
+        m.add_command(label=self.lang("toolbox"), command=self.open_toolbox)
+        m.add_command(label=self.lang("about"), command=self.open_about)
         m.add_separator()
-        m.add_command(label="锁定", command=self._toggle_lock)
-        m.add_command(label="显示倒计时" if self._hidden else "隐藏倒计时",
+        m.add_command(label=self.lang("lock"), command=self._toggle_lock)
+        m.add_command(label=self.lang("show_countdown") if self._hidden else self.lang("hide_countdown"),
                       command=self._toggle_visibility)
         m.add_separator()
-        m.add_command(label="关闭程序", command=self.quit_app)
+        m.add_command(label=self.lang("quit"), command=self.quit_app)
         self.right_menu = m
 
     # ---------------- 拖动 ---------------- #
@@ -562,7 +633,7 @@ class CountdownApp:
 
         if not items:
             hint = tk.Label(
-                self.rows_frame, text="右键菜单或托盘菜单 → 新增倒计时",
+                self.rows_frame, text=self.lang("empty_hint"),
                 font=(UI_FONT, max(9, fs // 2)), fg=FG_SUB, bg=self.bg, anchor="w",
             )
             hint.grid(row=0, column=0, columnspan=2, sticky="w")
@@ -588,8 +659,8 @@ class CountdownApp:
             try:
                 names = "、".join(f"「{it.get('name', '')}」" for it in expired)
                 ok = messagebox.askyesno(
-                    "倒计时已过期",
-                    f"{names} 的目标日期已过。\n是否删除？",
+                    self.lang("expired_title"),
+                    self.lang("expired_purge_msg", names=names),
                     parent=self.root)
             finally:
                 self._purge_prompting = False
@@ -609,16 +680,16 @@ class CountdownApp:
                 r = item_remaining(item, t)
             except Exception:
                 try:
-                    label.configure(text="数据错误", fg=OVERDUE)
+                    label.configure(text=self.lang("data_error"), fg=OVERDUE)
                 except tk.TclError:
                     pass
                 continue
             if r > 0:
-                text = f"{r}天"
+                text = f"{r}{self.lang('day_unit')}"
             elif r == 0:
-                text = "今天"
+                text = self.lang("today")
             else:
-                text = "已过"
+                text = self.lang("expired")
             color = item.get("timer_color") or default_color_for(r, overrides)
             try:
                 label.configure(text=text, fg=color)
@@ -633,8 +704,10 @@ class CountdownApp:
 
     def _clock_text(self):
         now = datetime.now()
-        wd = WEEKDAY_CN[now.weekday()]
-        s = f"{now.strftime('%Y%m%d %H:%M:%S')} 周{wd}"
+        wd_keys = ("weekday_mon", "weekday_tue", "weekday_wed",
+                   "weekday_thu", "weekday_fri", "weekday_sat", "weekday_sun")
+        wd = self.lang(wd_keys[now.weekday()])
+        s = self.lang("clock_format", date=now.strftime("%Y%m%d %H:%M:%S"), weekday=wd)
         if self._is_locked():
             s += "  🔒"
         return s
@@ -734,22 +807,29 @@ class CountdownApp:
             return
         img = self._load_tray_image()
         menu = pystray.Menu(
-            pystray.MenuItem("显示/隐藏", self._tray_toggle_show, default=True),
-            pystray.MenuItem("新增倒计时", self._tray_add),
+            pystray.MenuItem(self.lang("show_hide"), self._tray_toggle_show, default=True),
+            pystray.MenuItem(self.lang("add_countdown"), self._tray_add),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("锁定", self._tray_toggle_lock,
+            pystray.MenuItem(self.lang("lock"), self._tray_toggle_lock,
                              checked=lambda it: bool(self.cfg.get("locked", False))),
-            pystray.MenuItem("最顶置", self._tray_toggle_topmost,
+            pystray.MenuItem(self.lang("topmost"), self._tray_toggle_topmost,
                              checked=lambda it: bool(self.cfg.get("topmost", True))),
-            pystray.MenuItem("设置", self._tray_settings),
-            pystray.MenuItem("使用引导", self._tray_guide),
-            pystray.MenuItem("工具箱", self._tray_toolbox),
-            pystray.MenuItem("关于", self._tray_about),
+            pystray.MenuItem(self.lang("settings"), self._tray_settings),
+            pystray.MenuItem(self.lang("guide"), self._tray_guide),
+            pystray.MenuItem(self.lang("toolbox"), self._tray_toolbox),
+            pystray.MenuItem(self.lang("about"), self._tray_about),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("关闭程序", self._tray_quit),
+            pystray.MenuItem(self.lang("quit"), self._tray_quit),
         )
+        # X11 后端的托盘标题按 latin-1 编码，中文会抛 UnicodeEncodeError，
+        # 因此非 latin-1 可编码时退回英文名，保证托盘仍能启动
+        title = self.lang("app_title")
         try:
-            self.tray_icon = pystray.Icon("desktop_countdown", img, "无名小工具", menu)
+            title.encode("latin-1")
+        except UnicodeEncodeError:
+            title = "Desktop Countdown"
+        try:
+            self.tray_icon = pystray.Icon("desktop_countdown", img, title, menu)
             threading.Thread(target=self.tray_icon.run, daemon=True).start()
         except Exception as exc:
             print("托盘启动失败:", exc, file=sys.stderr)
@@ -918,7 +998,7 @@ class CountdownApp:
             self.guide_win.lift()
             self.guide_win.focus_force()
             return
-        self.guide_win = GuideWindow(self.root)
+        self.guide_win = GuideWindow(self.root, self)
 
     def open_toolbox(self):
         if self.toolbox_win is not None and self.toolbox_win.winfo_exists():
@@ -976,7 +1056,7 @@ class NameItemDialog(tk.Toplevel):
         self.result = None
         self.custom_color = item.get("name_color")
 
-        self.title("文字单设置")
+        self.title(self.app.lang("name_item"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -988,21 +1068,22 @@ class NameItemDialog(tk.Toplevel):
         body = tk.Frame(self, bg=BG_PANEL)
         body.pack(fill="both", expand=True, padx=16, pady=14)
 
-        tk.Label(body, text="名称", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("name"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10), anchor="w").pack(fill="x")
         self.name_var = tk.StringVar(value=item.get("name", ""))
         tk.Entry(body, textvariable=self.name_var, bg=ENTRY_BG, fg=FG_MAIN,
                  insertbackground=FG_MAIN, relief="flat",
                  font=(UI_FONT, 11)).pack(fill="x", pady=(4, 10))
 
-        tk.Label(body, text="颜色", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("color"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10), anchor="w").pack(fill="x")
 
         self.color_choice = tk.StringVar(
             value="custom" if item.get("name_color") else "default")
         cf = tk.Frame(body, bg=BG_PANEL)
         cf.pack(fill="x", pady=(4, 6))
-        for text, val in (("默认", "default"), ("自定义", "custom")):
+        for text, val in ((self.app.lang("default"), "default"),
+                          (self.app.lang("custom"), "custom")):
             tk.Radiobutton(
                 cf, text=text, value=val, variable=self.color_choice,
                 bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
@@ -1010,12 +1091,12 @@ class NameItemDialog(tk.Toplevel):
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
 
-        make_button(body, "选色", self._pick_color).pack(anchor="w", pady=(2, 12))
+        make_button(body, self.app.lang("pick_color_btn"), self._pick_color).pack(anchor="w", pady=(2, 12))
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.pack(fill="x", pady=(4, 0))
-        make_button(btns, "完成", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Return>", lambda e: self._ok())
         self.bind("<Escape>", lambda e: self._cancel())
@@ -1038,7 +1119,7 @@ class NameItemDialog(tk.Toplevel):
     def _ok(self):
         name = self.name_var.get().strip()
         if not name:
-            messagebox.showwarning("提示", "名称不能为空", parent=self)
+            messagebox.showwarning(self.app.lang("prompt"), self.app.lang("name_empty"), parent=self)
             return
         color = self.custom_color if self.color_choice.get() == "custom" else None
         self.result = {"name": name, "name_color": color}
@@ -1060,7 +1141,7 @@ class TimeItemDialog(tk.Toplevel):
         self.result = None
         self.custom_color = item.get("timer_color")
 
-        self.title("时间单设置")
+        self.title(self.app.lang("time_item"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1073,17 +1154,18 @@ class TimeItemDialog(tk.Toplevel):
         body.pack(fill="both", expand=True, padx=16, pady=14)
         body.columnconfigure(1, weight=1)
 
-        tk.Label(body, text=f"条目：{item.get('name', '')}",
+        tk.Label(body, text=self.app.lang("item_label") + "：" + item.get('name', ''),
                  bg=BG_PANEL, fg=FG_SUB, font=(UI_FONT, 9),
                  anchor="w").grid(row=0, column=0, columnspan=3,
                                   sticky="w", pady=(0, 8))
 
-        tk.Label(body, text="模式", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("mode"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=1, column=0, sticky="w", pady=4)
         self.mode_var = tk.StringVar(value=item.get("mode", "days"))
         mf = tk.Frame(body, bg=BG_PANEL)
         mf.grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 0))
-        for text, val in (("天数倒计", "days"), ("日期倒计", "date")):
+        for text, val in ((self.app.lang("days_countdown"), "days"),
+                          (self.app.lang("date_countdown"), "date")):
             tk.Radiobutton(
                 mf, text=text, value=val, variable=self.mode_var,
                 command=self._update_state,
@@ -1092,7 +1174,7 @@ class TimeItemDialog(tk.Toplevel):
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
 
-        tk.Label(body, text="天数", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("days"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=2, column=0, sticky="w", pady=4)
         self.days_var = tk.StringVar(
             value=str(item.get("days", 30)) if item.get("mode") != "date" else "30")
@@ -1106,13 +1188,13 @@ class TimeItemDialog(tk.Toplevel):
         tk.Label(body, text=f"（0 ~ {MAX_DAYS}）", bg=BG_PANEL, fg=FG_SUB,
                  font=(UI_FONT, 9)).grid(row=2, column=2, sticky="w")
 
-        tk.Label(body, text="日期", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("date"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=3, column=0, sticky="w", pady=4)
         init_date_text = ""
         if item.get("mode") == "date":
             try:
                 d = date.fromisoformat(item["date"])
-                init_date_text = f"{d.year}年{d.month:02d}月{d.day:02d}日"
+                init_date_text = f"{d.year}/{d.month:02d}/{d.day:02d}"
             except Exception:
                 init_date_text = ""
         self.date_var = tk.StringVar(value=init_date_text)
@@ -1125,28 +1207,29 @@ class TimeItemDialog(tk.Toplevel):
         self.date_entry.grid(row=3, column=1, columnspan=2, sticky="ew",
                              padx=(8, 0), pady=4)
 
-        tk.Label(body, text="颜色", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("color"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=4, column=0, sticky="w", pady=(10, 4))
         self.color_choice = tk.StringVar(
             value="custom" if item.get("timer_color") else "default")
         cf = tk.Frame(body, bg=BG_PANEL)
         cf.grid(row=4, column=1, columnspan=2, sticky="w",
                 padx=(8, 0), pady=(10, 4))
-        for text, val in (("默认", "default"), ("自定义", "custom")):
+        for text, val in ((self.app.lang("default"), "default"),
+                          (self.app.lang("custom"), "custom")):
             tk.Radiobutton(
                 cf, text=text, value=val, variable=self.color_choice,
                 bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
                 activebackground=BG_PANEL, activeforeground=FG_MAIN,
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
-        make_button(body, "选色", self._pick_color).grid(
+        make_button(body, self.app.lang("pick_color_btn"), self._pick_color).grid(
             row=5, column=1, sticky="w", padx=(8, 0), pady=(0, 10))
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        make_button(btns, "删除", self._delete).pack(side="left")
-        make_button(btns, "完成", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("delete"), self._delete).pack(side="left")
+        make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Return>", lambda e: self._ok())
         self.bind("<Escape>", lambda e: self._cancel())
@@ -1181,24 +1264,24 @@ class TimeItemDialog(tk.Toplevel):
             try:
                 n = int(self.days_var.get().strip())
             except ValueError:
-                messagebox.showwarning("提示", "天数必须为整数", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("days_not_int"), parent=self)
                 return
             if not (0 <= n <= MAX_DAYS):
-                messagebox.showwarning("提示", f"天数必须在 0 ~ {MAX_DAYS}", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("days_out_of_range", max=MAX_DAYS), parent=self)
                 return
             data = {"mode": "days", "days": n}
         else:
             try:
                 d = parse_date_str(self.date_var.get())
             except ValueError as exc:
-                messagebox.showwarning("提示", str(exc), parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), str(exc), parent=self)
                 return
             delta = (d - today()).days
             if delta < 0:
-                messagebox.showwarning("提示", "目标日期不能早于今天", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("date_before_today"), parent=self)
                 return
             if delta > MAX_DAYS:
-                messagebox.showwarning("提示", f"距离今天不能超过 {MAX_DAYS} 天", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("date_too_far", max=MAX_DAYS), parent=self)
                 return
             data = {"mode": "date", "date": d.isoformat()}
         data["timer_color"] = (self.custom_color
@@ -1208,7 +1291,8 @@ class TimeItemDialog(tk.Toplevel):
 
     def _delete(self):
         name = self.item.get("name", "")
-        if not messagebox.askyesno("删除倒计时", f"确定删除「{name}」？",
+        if not messagebox.askyesno(self.app.lang("delete_title"),
+                                   self.app.lang("delete_confirm", name=name),
                                    parent=self):
             return
         self.result = {"delete": True}
@@ -1228,7 +1312,7 @@ class AddItemDialog(tk.Toplevel):
         self.app = app
         self.result = None
 
-        self.title("新增倒计时")
+        self.title(self.app.lang("add_countdown"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1241,7 +1325,7 @@ class AddItemDialog(tk.Toplevel):
         body.pack(fill="both", expand=True, padx=16, pady=14)
         body.columnconfigure(1, weight=1)
 
-        tk.Label(body, text="名称", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("name"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=0, column=0, sticky="w", pady=4)
         self.name_var = tk.StringVar(value="")
         tk.Entry(body, textvariable=self.name_var, bg=ENTRY_BG, fg=FG_MAIN,
@@ -1249,12 +1333,13 @@ class AddItemDialog(tk.Toplevel):
                  font=(UI_FONT, 10)).grid(row=0, column=1, columnspan=2,
                                           sticky="ew", pady=4, padx=(8, 0))
 
-        tk.Label(body, text="方式", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("method"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=1, column=0, sticky="w", pady=4)
         self.mode_var = tk.StringVar(value="days")
         mf = tk.Frame(body, bg=BG_PANEL)
         mf.grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 0))
-        for text, val in (("n 天后", "days"), ("指定日期", "date")):
+        for text, val in ((self.app.lang("n_days"), "days"),
+                          (self.app.lang("target_date"), "date")):
             tk.Radiobutton(
                 mf, text=text, value=val, variable=self.mode_var,
                 command=self._update_state,
@@ -1263,7 +1348,7 @@ class AddItemDialog(tk.Toplevel):
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
 
-        tk.Label(body, text="天数", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("days"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=2, column=0, sticky="w", pady=4)
         self.days_var = tk.StringVar(value="30")
         self.days_entry = tk.Entry(body, textvariable=self.days_var,
@@ -1274,9 +1359,9 @@ class AddItemDialog(tk.Toplevel):
                                    relief="flat", font=(UI_FONT, 10), width=8)
         self.days_entry.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=4)
 
-        tk.Label(body, text="日期", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("date"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=3, column=0, sticky="w", pady=4)
-        self.date_var = tk.StringVar(value=(today() + timedelta(days=30)).strftime("%Y年%m月%d日"))
+        self.date_var = tk.StringVar(value=(today() + timedelta(days=30)).strftime("%Y/%m/%d"))
         self.date_entry = tk.Entry(body, textvariable=self.date_var,
                                    bg=ENTRY_BG, fg=FG_MAIN,
                                    disabledbackground="#171c22",
@@ -1288,8 +1373,8 @@ class AddItemDialog(tk.Toplevel):
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(10, 0))
-        make_button(btns, "完成", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Return>", lambda e: self._ok())
         self.bind("<Escape>", lambda e: self._cancel())
@@ -1311,17 +1396,17 @@ class AddItemDialog(tk.Toplevel):
     def _ok(self):
         name = self.name_var.get().strip()
         if not name:
-            messagebox.showwarning("提示", "请填写名称", parent=self)
+            messagebox.showwarning(self.app.lang("prompt"), self.app.lang("name_empty"), parent=self)
             return
         t = today()
         if self.mode_var.get() == "days":
             try:
                 n = int(self.days_var.get().strip())
             except ValueError:
-                messagebox.showwarning("提示", "天数必须为整数", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("days_not_int"), parent=self)
                 return
             if not (0 <= n <= MAX_DAYS):
-                messagebox.showwarning("提示", f"天数必须在 0 ~ {MAX_DAYS}", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("days_out_of_range", max=MAX_DAYS), parent=self)
                 return
             self.result = {
                 "name": name, "mode": "days", "days": n,
@@ -1332,14 +1417,14 @@ class AddItemDialog(tk.Toplevel):
             try:
                 d = parse_date_str(self.date_var.get())
             except ValueError as exc:
-                messagebox.showwarning("提示", str(exc), parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), str(exc), parent=self)
                 return
             delta = (d - t).days
             if delta < 0:
-                messagebox.showwarning("提示", "目标日期不能早于今天", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("date_before_today"), parent=self)
                 return
             if delta > MAX_DAYS:
-                messagebox.showwarning("提示", f"距离今天不能超过 {MAX_DAYS} 天", parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("date_too_far", max=MAX_DAYS), parent=self)
                 return
             self.result = {
                 "name": name, "mode": "date", "date": d.isoformat(),
@@ -1357,10 +1442,10 @@ class AddItemDialog(tk.Toplevel):
 # --------------------------------------------------------------------------- #
 class PickColorDialog(tk.Toplevel):
     PRESETS = [
-        ("黑", "#000000"), ("白", "#FFFFFF"), ("红", "#EF5350"),
-        ("橙", "#FF9800"), ("黄", "#FFCA28"), ("绿", "#66BB6A"),
-        ("青", "#26C6DA"), ("蓝", "#42A5F5"), ("紫", "#AB47BC"),
-        ("粉", "#F06292"), ("灰", "#90A4AE"),
+        ("color_black", "#000000"), ("color_white", "#FFFFFF"), ("color_red", "#EF5350"),
+        ("color_orange", "#FF9800"), ("color_yellow", "#FFCA28"), ("color_green", "#66BB6A"),
+        ("color_cyan", "#26C6DA"), ("color_blue", "#42A5F5"), ("color_purple", "#AB47BC"),
+        ("color_pink", "#F06292"), ("color_gray", "#90A4AE"),
     ]
 
     def __init__(self, parent, app, initial_color="#ffffff", initial_alpha=0.9,
@@ -1370,7 +1455,7 @@ class PickColorDialog(tk.Toplevel):
         self.result = None
         self.current_color = self._norm(initial_color)
 
-        self.title("选色器")
+        self.title(self.app.lang("pick_color"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1383,13 +1468,14 @@ class PickColorDialog(tk.Toplevel):
         body.pack(fill="both", expand=True, padx=16, pady=14)
 
         # 预设颜色
-        tk.Label(body, text="预设颜色", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("preset_colors"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10), anchor="w").pack(fill="x")
         pg = tk.Frame(body, bg=BG_PANEL)
         pg.pack(fill="x", pady=(4, 8))
-        for i, (label, hexv) in enumerate(self.PRESETS):
+        for i, (key, hexv) in enumerate(self.PRESETS):
+            label = self.app.lang(key)
             b = tk.Button(pg, text=label, bg=hexv,
-                          fg="#000000" if label in ("白", "黄") else "#ffffff",
+                          fg="#000000" if key in ("color_white", "color_yellow") else "#ffffff",
                           activebackground=hexv, relief="flat", bd=0,
                           font=(UI_FONT, 9), width=4, cursor="hand2")
             b.configure(command=lambda c=hexv: self._set_color(c))
@@ -1398,7 +1484,7 @@ class PickColorDialog(tk.Toplevel):
             pg.columnconfigure(c, weight=1)
 
         # RGB
-        tk.Label(body, text="RGB 颜色", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("rgb_color"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10), anchor="w").pack(fill="x")
         rgb_row = tk.Frame(body, bg=BG_PANEL)
         rgb_row.pack(fill="x", pady=(4, 4))
@@ -1415,13 +1501,13 @@ class PickColorDialog(tk.Toplevel):
                      insertbackground=FG_MAIN, relief="flat",
                      width=5, font=(UI_FONT, 10)).pack(side="left",
                                                        padx=(2, 8))
-        make_button(rgb_row, "改变", self._apply_rgb).pack(side="left")
+        make_button(rgb_row, self.app.lang("change"), self._apply_rgb).pack(side="left")
 
         # 透明度（仅全局设置时显示）
         self.alpha_var = tk.DoubleVar(
             value=max(0.15, min(1.0, float(initial_alpha))))
         if with_alpha:
-            tk.Label(body, text="透明度 (ALPHA)", bg=BG_PANEL, fg=FG_MAIN,
+            tk.Label(body, text=self.app.lang("alpha"), bg=BG_PANEL, fg=FG_MAIN,
                      font=(UI_FONT, 10), anchor="w").pack(fill="x", pady=(8, 0))
             tk.Scale(
                 body, from_=0.15, to=1.0, resolution=0.05, orient="horizontal",
@@ -1431,7 +1517,7 @@ class PickColorDialog(tk.Toplevel):
             ).pack(fill="x", pady=(2, 8))
 
         # 预览
-        tk.Label(body, text="颜色预览", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("preview"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10), anchor="w").pack(fill="x")
         self.preview = tk.Label(body, text="", bg=self.current_color,
                                 height=2, relief="solid", bd=1)
@@ -1439,8 +1525,8 @@ class PickColorDialog(tk.Toplevel):
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.pack(fill="x")
-        make_button(btns, "确定", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("confirm"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Return>", lambda e: self._ok())
         self.bind("<Escape>", lambda e: self._cancel())
@@ -1516,7 +1602,7 @@ class TimerColorsDialog(tk.Toplevel):
         self.custom_map = {k: overrides.get(k) for k in RANGE_KEYS}
         self.choice_vars = {}
 
-        self.title("计时颜色更改")
+        self.title(self.app.lang("timer_colors"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1530,7 +1616,7 @@ class TimerColorsDialog(tk.Toplevel):
         body.columnconfigure(2, weight=1)
 
         for i, key in enumerate(RANGE_KEYS):
-            label = RANGE_LABELS[key]
+            label = self.app.lang(key)
             default_color = DEFAULT_COLORS[key]
 
             tk.Label(body, text=label, bg=BG_PANEL, fg=FG_MAIN,
@@ -1544,7 +1630,7 @@ class TimerColorsDialog(tk.Toplevel):
             rf.grid(row=i, column=1, columnspan=2, sticky="w",
                     padx=(12, 0), pady=4)
             tk.Radiobutton(
-                rf, text="默认",
+                rf, text=self.app.lang("default"),
                 value="default", variable=var,
                 bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
                 activebackground=BG_PANEL, activeforeground=FG_MAIN,
@@ -1555,19 +1641,19 @@ class TimerColorsDialog(tk.Toplevel):
             swatch.pack(side="left", padx=(0, 12))
 
             tk.Radiobutton(
-                rf, text="自定义", value="custom", variable=var,
+                rf, text=self.app.lang("custom"), value="custom", variable=var,
                 bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
                 activebackground=BG_PANEL, activeforeground=FG_MAIN,
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 8))
-            make_button(rf, "选色",
+            make_button(rf, self.app.lang("pick"),
                         lambda k=key: self._pick(k)).pack(side="left")
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.grid(row=len(RANGE_KEYS), column=0, columnspan=3,
                   sticky="ew", pady=(10, 0))
-        make_button(btns, "完成", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Escape>", lambda e: self._cancel())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
@@ -1610,7 +1696,7 @@ class DefaultSettingsWindow(tk.Toplevel):
         super().__init__(parent)
         self.app = app
 
-        self.title("默认设置")
+        self.title(self.app.lang("default_settings"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1624,7 +1710,7 @@ class DefaultSettingsWindow(tk.Toplevel):
         body.columnconfigure(1, weight=1)
 
         # 文字大小
-        tk.Label(body, text="文字大小", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("font_size"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=0, column=0, sticky="w", pady=4)
         self.font_var = tk.IntVar(
             value=max(8, min(48, int(app.cfg.get("font_size", 25)))))
@@ -1638,21 +1724,21 @@ class DefaultSettingsWindow(tk.Toplevel):
         self.text_choice = tk.StringVar(
             value="custom" if app.cfg.get("text_color") else "default")
         self.text_color = app.cfg.get("text_color")
-        self._color_row(body, 1, "文字颜色", self.text_choice,
+        self._color_row(body, 1, self.app.lang("text_color"), self.text_choice,
                         lambda: self.text_color,
                         lambda c: setattr(self, "text_color", c))
 
         # 计时器颜色
-        tk.Label(body, text="计时器颜色", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("timer_colors"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=2, column=0, sticky="w", pady=4)
-        make_button(body, "更改", self._open_timer_colors).grid(
+        make_button(body, self.app.lang("change"), self._open_timer_colors).grid(
             row=2, column=1, sticky="w", padx=(8, 0), pady=4)
 
         # 时间颜色
         self.time_choice = tk.StringVar(
             value="custom" if app.cfg.get("time_color") else "default")
         self.time_color = app.cfg.get("time_color")
-        self._color_row(body, 3, "时间颜色", self.time_choice,
+        self._color_row(body, 3, self.app.lang("time_color"), self.time_choice,
                         lambda: self.time_color,
                         lambda c: setattr(self, "time_color", c))
 
@@ -1660,14 +1746,14 @@ class DefaultSettingsWindow(tk.Toplevel):
         self.menu_choice = tk.StringVar(
             value="custom" if app.cfg.get("menu_text_color") else "default")
         self.menu_color = app.cfg.get("menu_text_color")
-        self._color_row(body, 4, "菜单文字颜色", self.menu_choice,
+        self._color_row(body, 4, self.app.lang("menu_text_color"), self.menu_choice,
                         lambda: self.menu_color,
                         lambda c: setattr(self, "menu_color", c))
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        make_button(btns, "完成", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Escape>", lambda e: self._cancel())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
@@ -1682,13 +1768,13 @@ class DefaultSettingsWindow(tk.Toplevel):
         rf = tk.Frame(body, bg=BG_PANEL)
         rf.grid(row=row, column=1, sticky="w", padx=(8, 0), pady=4)
         tk.Radiobutton(
-            rf, text="默认", value="default", variable=choice_var,
+            rf, text=self.app.lang("default"), value="default", variable=choice_var,
             bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
             activebackground=BG_PANEL, activeforeground=FG_MAIN,
             font=(UI_FONT, 10), bd=0, highlightthickness=0,
         ).pack(side="left", padx=(0, 8))
         tk.Radiobutton(
-            rf, text="自定义", value="custom", variable=choice_var,
+            rf, text=self.app.lang("custom"), value="custom", variable=choice_var,
             bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
             activebackground=BG_PANEL, activeforeground=FG_MAIN,
             font=(UI_FONT, 10), bd=0, highlightthickness=0,
@@ -1707,7 +1793,7 @@ class DefaultSettingsWindow(tk.Toplevel):
                 self.app.cfg["alpha"] = round(alpha, 2)
                 self.app._apply_bg_and_alpha()
 
-        make_button(rf, "选色", pick).pack(side="left")
+        make_button(rf, self.app.lang("pick_color_btn"), pick).pack(side="left")
 
     def _open_timer_colors(self):
         dlg = TimerColorsDialog(self, self.app)
@@ -1744,7 +1830,7 @@ class TextSettingsWindow(tk.Toplevel):
         super().__init__(parent)
         self.app = app
 
-        self.title("文字设置")
+        self.title(self.app.lang("text_settings"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1757,7 +1843,7 @@ class TextSettingsWindow(tk.Toplevel):
         body.pack(fill="both", expand=True, padx=16, pady=14)
         body.columnconfigure(1, weight=1)
 
-        tk.Label(body, text="文字大小", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(body, text=self.app.lang("font_size"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10)).grid(row=0, column=0, sticky="w", pady=4)
         self.font_var = tk.IntVar(
             value=max(8, min(48, int(app.cfg.get("font_size", 25)))))
@@ -1767,13 +1853,13 @@ class TextSettingsWindow(tk.Toplevel):
             insertbackground=FG_MAIN, relief="flat", font=(UI_FONT, 10),
         ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=4)
 
-        make_button(body, "默认设置", self._open_default).grid(
+        make_button(body, self.app.lang("default_settings"), self._open_default).grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        make_button(btns, "完成", self._ok, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Escape>", lambda e: self._cancel())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
@@ -1807,60 +1893,14 @@ class TextSettingsWindow(tk.Toplevel):
 # --------------------------------------------------------------------------- #
 # 使用引导
 # --------------------------------------------------------------------------- #
-GUIDE_STEPS = [
-    (
-        "欢迎使用「无名小工具」",
-        [
-            "这是一个常驻桌面的倒计时清单，一个窗口同时看住多个「还有多少天」。",
-            "两种计时方式：n 天后（每天自动顺延）、指定日期（固定倒数）。",
-            "第一次启动会自动弹出本引导，之后可在托盘菜单 → 使用引导 再次打开。",
-        ],
-    ),
-    (
-        "一切从托盘开始",
-        [
-            "程序启动后会在系统托盘（右下角 / 菜单栏）显示图标。",
-            "左键单击图标：显示 / 隐藏主界面。",
-            "右键单击图标：打开完整菜单（新增倒计时、锁定、最顶置、设置、使用引导、工具箱、关闭程序）。",
-            "如果托盘里看不到图标，请点开折叠区（^）找一找。",
-        ],
-    ),
-    (
-        "新增与编辑条目",
-        [
-            "托盘菜单 → 新增倒计时，填写名称并选择「n 天后」或「指定日期」。",
-            "双击条目的名称：修改文字内容与名称颜色。",
-            "双击条目的天数：修改时间规则与计时颜色。",
-            "时间单设置 → 删除：删除该条目；指定日期已过的条目会自动移除。",
-        ],
-    ),
-    (
-        "摆放与锁定",
-        [
-            "按住主界面任意文字即可拖动窗口；有底板时，按住底板空白处也能拖。",
-            "右键单击主界面，可直接打开常用菜单。",
-            "托盘菜单 → 锁定：界面变淡且不可拖动、不可编辑，防止误触。",
-            "锁定后鼠标点击会直接穿透到下层程序（Windows），解锁请走托盘菜单。",
-        ],
-    ),
-    (
-        "外观与设置",
-        [
-            "双击左上角的时间行，或托盘菜单 → 设置，打开设置窗口。",
-            "「窗口类型」可选有边有底 / 有边无底 / 无边无底，边与底板颜色、透明度均可自定义。",
-            "可调整文字大小、文字 / 时间颜色、分档计时颜色、存档位置、开机自启动。",
-            "设置 → 文字设置 → 默认设置，可统一修改颜色与计时档位。",
-        ],
-    ),
-]
-
 
 class GuideWindow(tk.Toplevel):
-    def __init__(self, parent):
+    def __init__(self, parent, app):
         super().__init__(parent)
+        self.app = app
         self.index = 0
 
-        self.title("使用引导")
+        self.title(self.app.lang("guide"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1895,20 +1935,24 @@ class GuideWindow(tk.Toplevel):
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.pack(fill="x")
-        self.next_btn = make_button(btns, "下一步", self._next, primary=True)
+        self.next_btn = make_button(btns, self.app.lang("next"), self._next, primary=True)
         self.next_btn.pack(side="right")
-        self.prev_btn = make_button(btns, "上一步", self._prev)
+        self.prev_btn = make_button(btns, self.app.lang("prev"), self._prev)
         self.prev_btn.pack(side="right", padx=(0, 8))
-        make_button(btns, "跳过", self._close).pack(side="left")
+        make_button(btns, self.app.lang("skip"), self._close).pack(side="left")
 
         self._render()
         center_window(self, parent)
         self.grab_set()
 
+    def _steps(self):
+        return self.app._lang_mgr.get_list("guide_steps")
+
     def _render(self):
-        title, lines = GUIDE_STEPS[self.index]
+        steps = self._steps()
+        title, lines = steps[self.index]
         self.step_label.configure(
-            text=f"第 {self.index + 1} / {len(GUIDE_STEPS)} 步")
+            text=self.app.lang("step_counter", index=self.index + 1, total=len(steps)))
 
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
@@ -1919,10 +1963,11 @@ class GuideWindow(tk.Toplevel):
 
         self.prev_btn.configure(state="normal" if self.index > 0 else "disabled")
         self.next_btn.configure(
-            text="开始使用" if self.index == len(GUIDE_STEPS) - 1 else "下一步")
+            text=self.app.lang("start_using") if self.index == len(steps) - 1 else self.app.lang("next"))
 
     def _next(self):
-        if self.index >= len(GUIDE_STEPS) - 1:
+        steps = self._steps()
+        if self.index >= len(steps) - 1:
             self._close()
             return
         self.index += 1
@@ -1951,7 +1996,7 @@ class AboutWindow(tk.Toplevel):
         self.app = app
         self._seq = 0
 
-        self.title("关于")
+        self.title(self.app.lang("about"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -1964,7 +2009,7 @@ class AboutWindow(tk.Toplevel):
         body.pack(fill="both", expand=True, padx=16, pady=(14, 6))
 
         self.text = tk.Text(
-            body, width=72, height=16, wrap="word",
+            body, width=72, height=28, wrap="word",
             bg=BG_PANEL, fg=FG_MAIN, relief="flat", bd=0,
             highlightthickness=0, cursor="arrow", insertwidth=0,
             font=(UI_FONT, 10), spacing1=1, spacing3=1,
@@ -1982,7 +2027,7 @@ class AboutWindow(tk.Toplevel):
 
         bottom = tk.Frame(self, bg=BG_PANEL)
         bottom.pack(fill="x", padx=16, pady=(6, 14))
-        make_button(bottom, "关闭", self.destroy, primary=True).pack(side="right")
+        make_button(bottom, self.app.lang("close"), self.destroy, primary=True).pack(side="right")
 
         self.bind("<Escape>", lambda e: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
@@ -2019,44 +2064,37 @@ class AboutWindow(tk.Toplevel):
     def _fill_content(self):
         add = self.text.insert
 
-        add("end", "无名小工具\n", "title")
+        add("end", APP_NAME + "\n", "title")
         add("end", f"{APP_VERSION}\n", "ver")
 
-        add("end", "更新日志\n", "h")
-        for line in (
-            "· 新增窗口类型：有边有底 / 有边无底 / 无边无底",
-            "· 有底板时可直接拖动底板空白处移动窗口",
-            "· 锁定后整窗鼠标穿透，可直接操作下层程序（Windows）",
-            "· 边与底板颜色支持自定义",
-            "· 存档迁移至应用数据目录，新增日志功能",
-            "· 精简「关于」：移除历史更新记录与征集",
-        ):
+        add("end", self.app.lang("changelog") + "\n", "h")
+        for line in self.app._lang_mgr.get_list("changelog_lines"):
             add("end", line + "\n", "b")
 
-        add("end", "作者：", "h")
-        self._insert_link("四天不晚", "open", BILI_URL)
+        add("end", self.app.lang("author") + "：", "h")
+        self._insert_link(AUTHOR_NAME, "open", BILI_URL)
         add("end", "\n", "b")
-        add("end", "只是一个学牲罢了。\n", "s")
-        add("end", "注：本程序部分为 AI 辅助编写。\n", "s")
+        add("end", self.app.lang("author_desc") + "\n", "s")
+        add("end", self.app.lang("ai_note") + "\n", "s")
 
-        add("end", "支持\n", "h")
-        add("end", "爱发电：", "b")
+        add("end", self.app.lang("support") + "\n", "h")
+        add("end", self.app.lang("afdian") + "：", "b")
         self._insert_link("https://ifdian.net/a/wmxgj", "open", AFDIAN_URL)
         add("end", "\n", "b")
 
-        add("end", "反馈 / 交流\n", "h")
-        for label, (number, url, name) in (
-            ("反馈群：", QQ_FEEDBACK),
-            ("交流群：", QQ_CHAT),
+        add("end", self.app.lang("feedback") + "\n", "h")
+        for label_key, (number, url, name) in (
+            ("feedback_group", QQ_FEEDBACK),
+            ("chat_group", QQ_CHAT),
         ):
-            add("end", label, "b")
+            add("end", self.app.lang(label_key) + "：", "b")
             self._insert_link(number, "copy", number)
             add("end", "　", "b")
-            self._insert_link(f"点击加入群聊【{name}】", "open", url)
+            self._insert_link(self.app.lang("join_group", name=name), "open", url)
             add("end", "\n", "b")
 
-        add("end", "源码\n", "h")
-        add("end", "GitHub：", "b")
+        add("end", self.app.lang("source") + "\n", "h")
+        add("end", self.app.lang("github") + "：", "b")
         self._insert_link(GITHUB_URL, "open", GITHUB_URL)
         add("end", "\n", "b")
 
@@ -2066,15 +2104,15 @@ class AboutWindow(tk.Toplevel):
                 self.clipboard_clear()
                 self.clipboard_append(payload)
                 self.update_idletasks()
-                self.status.configure(text=f"已复制：{payload}")
+                self.status.configure(text=self.app.lang("copied", payload=payload))
             except tk.TclError:
-                self.status.configure(text="复制失败，请手动选择文本复制")
+                self.status.configure(text=self.app.lang("copy_failed"))
         else:
             try:
                 webbrowser.open(payload)
-                self.status.configure(text="已在浏览器中打开")
+                self.status.configure(text=self.app.lang("browser_opened"))
             except Exception:
-                self.status.configure(text="无法打开浏览器，请手动访问：" + payload)
+                self.status.configure(text=self.app.lang("browser_failed", payload=payload))
         try:
             self.after(2500, lambda: self.status.configure(text=""))
         except tk.TclError:
@@ -2086,15 +2124,15 @@ class AboutWindow(tk.Toplevel):
 # --------------------------------------------------------------------------- #
 class ToolboxWindow(tk.Toplevel):
     TOOLS = (
-        ("下载工具", "Plain Craft Launcher 2.exe"),
-        ("卸载工具", "geek.exe"),
+        ("download_tool", "Plain Craft Launcher 2.exe"),
+        ("uninstall_tool", "geek.exe"),
     )
 
     def __init__(self, parent, app):
         super().__init__(parent)
         self.app = app
 
-        self.title("工具箱")
+        self.title(self.app.lang("toolbox"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -2106,13 +2144,13 @@ class ToolboxWindow(tk.Toplevel):
         body = tk.Frame(self, bg=BG_PANEL)
         body.pack(fill="both", expand=True, padx=16, pady=14)
 
-        for text, exe in self.TOOLS:
-            make_button(body, text,
+        for key, exe in self.TOOLS:
+            make_button(body, self.app.lang(key),
                         lambda e=exe: self._launch(e)).pack(fill="x", pady=3)
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.pack(fill="x", pady=(10, 0))
-        make_button(btns, "关闭", self.destroy, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("close"), self.destroy, primary=True).pack(side="right")
 
         self.bind("<Escape>", lambda e: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
@@ -2133,8 +2171,8 @@ class ToolboxWindow(tk.Toplevel):
         path = self._find_tool(exe)
         if path is None:
             messagebox.showwarning(
-                "工具箱",
-                f"未找到「{exe}」\n请把它放在程序同一目录下。",
+                self.app.lang("toolbox"),
+                self.app.lang("tool_not_found", exe=exe),
                 parent=self)
             return
         here = os.path.dirname(path)
@@ -2145,7 +2183,8 @@ class ToolboxWindow(tk.Toplevel):
             if sys.platform.startswith("win") and getattr(exc, "winerror", None) == 740:
                 self._launch_elevated(path, here)
             else:
-                messagebox.showwarning("工具箱", f"启动失败：{exc}", parent=self)
+                messagebox.showwarning(self.app.lang("toolbox"),
+                                       self.app.lang("launch_failed", exc=exc), parent=self)
 
     def _launch_elevated(self, path, workdir):
         try:
@@ -2153,14 +2192,16 @@ class ToolboxWindow(tk.Toplevel):
             rc = ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", path, None, workdir, 1)
         except Exception as exc:
-            messagebox.showwarning("工具箱", f"提权启动失败：{exc}", parent=self)
+            messagebox.showwarning(self.app.lang("toolbox"),
+                                   self.app.lang("elevate_failed", exc=exc), parent=self)
             return
         if rc <= 32:
             if rc == 1223:
-                messagebox.showinfo("工具箱", "已取消提权启动。", parent=self)
+                messagebox.showinfo(self.app.lang("toolbox"), self.app.lang("elevate_cancelled"), parent=self)
             else:
                 messagebox.showwarning(
-                    "工具箱", f"提权启动失败（错误码 {rc}）", parent=self)
+                    self.app.lang("toolbox"),
+                    self.app.lang("elevate_failed", exc=f"error code {rc}"), parent=self)
 
 
 # --------------------------------------------------------------------------- #
@@ -2172,7 +2213,7 @@ class AutoHideSettingsWindow(tk.Toplevel):
         self.app = app
         self.ah = app.cfg.setdefault("auto_hide", {"enabled": False, "apps": []})
 
-        self.title("自动隐藏设置")
+        self.title(self.app.lang("auto_hide"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -2193,11 +2234,11 @@ class AutoHideSettingsWindow(tk.Toplevel):
         # 启用开关
         row_en = tk.Frame(body, bg=BG_PANEL)
         row_en.pack(fill="x", pady=(0, 8))
-        tk.Label(row_en, text="启用自动隐藏", bg=BG_PANEL, fg=FG_MAIN,
+        tk.Label(row_en, text=self.app.lang("enable_auto_hide"), bg=BG_PANEL, fg=FG_MAIN,
                  font=(UI_FONT, 10), width=12, anchor="w").pack(side="left")
         self.enabled_var = tk.StringVar(
             value="on" if self.ah.get("enabled") else "off")
-        for t, v in (("关", "off"), ("开", "on")):
+        for t, v in ((self.app.lang("off"), "off"), (self.app.lang("on"), "on")):
             tk.Radiobutton(
                 row_en, text=t, value=v, variable=self.enabled_var,
                 command=self._toggle_enabled,
@@ -2206,7 +2247,7 @@ class AutoHideSettingsWindow(tk.Toplevel):
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(8, 0))
 
-        tk.Label(body, text="当以下任一程序运行时，自动隐藏倒计时：",
+        tk.Label(body, text=self.app.lang("hint_apps"),
                  bg=BG_PANEL, fg=FG_SUB, font=(UI_FONT, 9)).pack(anchor="w")
 
         # 名单列表
@@ -2233,23 +2274,22 @@ class AutoHideSettingsWindow(tk.Toplevel):
             highlightcolor=ACCENT, highlightbackground=GLASS_EDGE)
         self.entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
         self.entry.bind("<Return>", lambda e: self._add_app())
-        make_button(row_op, "添加", self._add_app).pack(side="left")
+        make_button(row_op, self.app.lang("add"), self._add_app).pack(side="left")
 
         row_del = tk.Frame(body, bg=BG_PANEL)
         row_del.pack(fill="x", pady=2)
-        make_button(row_del, "删除选中", self._remove_app).pack(side="left")
-        make_button(row_del, "清空", self._clear_apps).pack(side="left", padx=(6, 0))
+        make_button(row_del, self.app.lang("remove_selected"), self._remove_app).pack(side="left")
+        make_button(row_del, self.app.lang("clear"), self._clear_apps).pack(side="left", padx=(6, 0))
 
         # 提示
         tk.Label(body,
-                 text="提示：填写进程名，如 notepad.exe、chrome.exe\n"
-                      "（不含路径，大小写不敏感）",
+                 text=self.app.lang("process_hint"),
                  bg=BG_PANEL, fg=FG_SUB, font=(UI_FONT, 8),
                  justify="left").pack(anchor="w", pady=(6, 0))
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.pack(fill="x", pady=(12, 0))
-        make_button(btns, "完成", self._close, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("done"), self._close, primary=True).pack(side="right")
 
         self.bind("<Escape>", lambda e: self._close())
 
@@ -2304,7 +2344,7 @@ class SettingsWindow(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
 
-        self.title("设置")
+        self.title(self.app.lang("settings"))
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
@@ -2322,16 +2362,16 @@ class SettingsWindow(tk.Toplevel):
         body = tk.Frame(self, bg=BG_PANEL)
         body.pack(fill="both", expand=True, padx=16, pady=14)
 
-        make_button(body, "新增倒计时", self._add_item).pack(fill="x", pady=3)
+        make_button(body, self.app.lang("add_countdown"), self._add_item).pack(fill="x", pady=3)
 
         # 最顶置
         row1 = tk.Frame(body, bg=BG_PANEL)
         row1.pack(fill="x", pady=3)
-        tk.Label(row1, text="最顶置", bg=BG_PANEL, fg=FG_MAIN,
-                 font=(UI_FONT, 10), width=10, anchor="w").pack(side="left")
+        tk.Label(row1, text=self.app.lang("topmost"), bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
         self.topmost_var = tk.StringVar(
             value="on" if self.app.cfg.get("topmost", True) else "off")
-        for t, v in (("关", "off"), ("开", "on")):
+        for t, v in ((self.app.lang("off"), "off"), (self.app.lang("on"), "on")):
             tk.Radiobutton(
                 row1, text=t, value=v, variable=self.topmost_var,
                 command=self._apply_topmost,
@@ -2343,11 +2383,11 @@ class SettingsWindow(tk.Toplevel):
         # 开机自启动
         row2 = tk.Frame(body, bg=BG_PANEL)
         row2.pack(fill="x", pady=3)
-        tk.Label(row2, text="开机自启动", bg=BG_PANEL, fg=FG_MAIN,
-                 font=(UI_FONT, 10), width=10, anchor="w").pack(side="left")
+        tk.Label(row2, text=self.app.lang("autostart"), bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
         self.autostart_var = tk.StringVar(
             value="on" if self.app.cfg.get("auto_start", False) else "off")
-        for t, v in (("关", "off"), ("开", "on")):
+        for t, v in ((self.app.lang("off"), "off"), (self.app.lang("on"), "on")):
             tk.Radiobutton(
                 row2, text=t, value=v, variable=self.autostart_var,
                 command=self._apply_autostart,
@@ -2359,10 +2399,10 @@ class SettingsWindow(tk.Toplevel):
         # 便携模式
         row_p = tk.Frame(body, bg=BG_PANEL)
         row_p.pack(fill="x", pady=3)
-        tk.Label(row_p, text="便携模式", bg=BG_PANEL, fg=FG_MAIN,
-                 font=(UI_FONT, 10), width=10, anchor="w").pack(side="left")
+        tk.Label(row_p, text=self.app.lang("portable"), bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
         self.portable_var = tk.StringVar(value="on" if is_portable() else "off")
-        for t, v in (("关", "off"), ("开", "on")):
+        for t, v in ((self.app.lang("off"), "off"), (self.app.lang("on"), "on")):
             tk.Radiobutton(
                 row_p, text=t, value=v, variable=self.portable_var,
                 command=self._apply_portable,
@@ -2371,17 +2411,33 @@ class SettingsWindow(tk.Toplevel):
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(8, 0))
 
+        # 语言（Beta 0.7）
+        row_lang = tk.Frame(body, bg=BG_PANEL)
+        row_lang.pack(fill="x", pady=3)
+        tk.Label(row_lang, text=self.app.lang("language"), bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
+        self.lang_var = tk.StringVar(value=self.app.cfg.get("language", "zh"))
+        for t, v in (("中文", "zh"), ("English", "en"), ("日本語", "ja")):
+            tk.Radiobutton(
+                row_lang, text=t, value=v, variable=self.lang_var,
+                command=self._apply_language,
+                bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
+                activebackground=BG_PANEL, activeforeground=FG_MAIN,
+                font=(UI_FONT, 10), bd=0, highlightthickness=0,
+            ).pack(side="left", padx=(8, 0))
+
         # 窗口类型（Beta 0.5）：即改即存、实时生效
         row_w = tk.Frame(body, bg=BG_PANEL)
         row_w.pack(fill="x", pady=3)
-        tk.Label(row_w, text="窗口类型", bg=BG_PANEL, fg=FG_MAIN,
-                 font=(UI_FONT, 10), width=10, anchor="w").pack(side="left")
+        tk.Label(row_w, text=self.app.lang("win_style"), bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
         style_now = self.app.cfg.get("win_style")
         if style_now not in ("edge_plate", "edge_only", "none"):
             style_now = "edge_plate"
         self.win_style_var = tk.StringVar(value=style_now)
-        for t, v in (("有边有底", "edge_plate"), ("有边无底", "edge_only"),
-                     ("无边无底", "none")):
+        for t, v in ((self.app.lang("style_edge_plate"), "edge_plate"),
+                     (self.app.lang("style_edge_only"), "edge_only"),
+                     (self.app.lang("style_none"), "none")):
             tk.Radiobutton(
                 row_w, text=t, value=v, variable=self.win_style_var,
                 command=self._apply_win_style,
@@ -2391,34 +2447,34 @@ class SettingsWindow(tk.Toplevel):
             ).pack(side="left", padx=(0, 2))
 
         # 边颜色 / 底板颜色（Beta 0.5）：选色即生效即保存
-        self._add_color_row(body, "边颜色", "edge_color", GLASS_EDGE)
-        self._add_color_row(body, "底板颜色", "plate_color", BG_DARK)
+        self._add_color_row(body, self.app.lang("edge_color"), "edge_color", GLASS_EDGE)
+        self._add_color_row(body, self.app.lang("plate_color"), "plate_color", BG_DARK)
 
-        make_button(body, "文字设置", self._open_text_settings).pack(
+        make_button(body, self.app.lang("text_settings"), self._open_text_settings).pack(
             fill="x", pady=3)
-        make_button(body, "自动隐藏设置", self._open_auto_hide).pack(
+        make_button(body, self.app.lang("auto_hide_settings"), self._open_auto_hide).pack(
             fill="x", pady=3)
 
         # 存档位置
         row3 = tk.Frame(body, bg=BG_PANEL)
         row3.pack(fill="x", pady=3)
-        tk.Label(row3, text="存档位置", bg=BG_PANEL, fg=FG_MAIN,
-                 font=(UI_FONT, 10), width=10, anchor="w").pack(side="left")
+        tk.Label(row3, text=self.app.lang("save_dir"), bg=BG_PANEL, fg=FG_MAIN,
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
         self.save_dir_label = tk.Label(
             row3, text=get_save_dir(), bg=BG_PANEL, fg=FG_SUB,
             font=(UI_FONT, 9), anchor="w")
         self.save_dir_label.pack(side="left", fill="x", expand=True, padx=(6, 6))
-        make_button(row3, "选择文件夹", self._choose_save_dir).pack(side="right")
+        make_button(row3, self.app.lang("choose_folder"), self._choose_save_dir).pack(side="right")
 
-        make_button(body, "工具箱", self._open_toolbox).pack(fill="x", pady=3)
-        make_button(body, "关于", self._open_about).pack(fill="x", pady=3)
-        make_button(body, "清除所有设置", self._clear_all).pack(fill="x", pady=3)
-        make_button(body, "关闭程序", self._close_app).pack(fill="x", pady=3)
+        make_button(body, self.app.lang("toolbox"), self._open_toolbox).pack(fill="x", pady=3)
+        make_button(body, self.app.lang("about"), self._open_about).pack(fill="x", pady=3)
+        make_button(body, self.app.lang("clear_all"), self._clear_all).pack(fill="x", pady=3)
+        make_button(body, self.app.lang("close_app"), self._close_app).pack(fill="x", pady=3)
 
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.pack(fill="x", pady=(12, 0))
-        make_button(btns, "完成", self._done, primary=True).pack(side="right")
-        make_button(btns, "取消", self._cancel).pack(side="right", padx=(0, 8))
+        make_button(btns, self.app.lang("done"), self._done, primary=True).pack(side="right")
+        make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
         self.bind("<Escape>", lambda e: self._cancel())
 
@@ -2443,13 +2499,29 @@ class SettingsWindow(tk.Toplevel):
             new_dir = set_portable(on)
         except OSError as exc:
             self.portable_var.set("on" if is_portable() else "off")
-            messagebox.showwarning("提示", f"切换便携模式失败：{exc}", parent=self)
+            messagebox.showwarning(self.app.lang("prompt"),
+                                   self.app.lang("portable_switch_failed", exc=exc), parent=self)
             return
         save_config(self.app.cfg)
         try:
             self.save_dir_label.configure(text=new_dir)
         except tk.TclError:
             pass
+
+    def _apply_language(self):
+        lang = self.lang_var.get()
+        if lang not in ("zh", "en", "ja"):
+            return
+        self.app.cfg["language"] = lang
+        self.app._lang_mgr.set_language(lang)
+        save_config(self.app.cfg)
+        # 提示用户重启后全部生效；先实时更新窗口标题
+        try:
+            self.app.root.title(self.app.lang("app_title"))
+        except tk.TclError:
+            pass
+        messagebox.showinfo(self.app.lang("prompt"),
+                            self.app.lang("restart_hint"), parent=self)
 
     def _apply_win_style(self):
         self.app.cfg["win_style"] = self.win_style_var.get()
@@ -2461,7 +2533,7 @@ class SettingsWindow(tk.Toplevel):
         row = tk.Frame(body, bg=BG_PANEL)
         row.pack(fill="x", pady=3)
         tk.Label(row, text=label, bg=BG_PANEL, fg=FG_MAIN,
-                 font=(UI_FONT, 10), width=10, anchor="w").pack(side="left")
+                 font=(UI_FONT, 10), width=15, anchor="w").pack(side="left")
         swatch = tk.Label(row, bg=self.app.cfg.get(key) or default, width=3,
                           relief="flat", bd=1, highlightthickness=1,
                           highlightbackground=FG_SUB)
@@ -2485,8 +2557,8 @@ class SettingsWindow(tk.Toplevel):
             swatch.configure(bg=default)
             self.app._apply_bg_and_alpha()
 
-        make_button(row, "选色", pick).pack(side="left", padx=(0, 4))
-        make_button(row, "默认", reset).pack(side="left")
+        make_button(row, self.app.lang("pick"), pick).pack(side="left", padx=(0, 4))
+        make_button(row, self.app.lang("default"), reset).pack(side="left")
 
     def _open_text_settings(self):
         self.app.open_text_settings()
@@ -2505,7 +2577,7 @@ class SettingsWindow(tk.Toplevel):
     def _choose_save_dir(self):
         if is_portable():
             messagebox.showinfo(
-                "提示", "便携模式已开启，存档固定在程序目录。\n如需自定义位置，请先关闭便携模式。",
+                self.app.lang("prompt"), self.app.lang("portable_mode_on"),
                 parent=self)
             return
         d = filedialog.askdirectory(parent=self, initialdir=get_save_dir())
@@ -2518,7 +2590,8 @@ class SettingsWindow(tk.Toplevel):
             self.save_dir_label.configure(text=d)
         except tk.TclError:
             pass
-        messagebox.showinfo("提示", f"存档位置已更改为：\n{d}", parent=self)
+        messagebox.showinfo(self.app.lang("prompt"),
+                            self.app.lang("save_dir_changed", dir=d), parent=self)
 
     def _add_item(self):
         dlg = AddItemDialog(self, self.app)
@@ -2536,7 +2609,7 @@ class SettingsWindow(tk.Toplevel):
 
     def _clear_all(self):
         if not messagebox.askyesno(
-            "清除", "是否确认清除？是将会程序初始化", parent=self
+            self.app.lang("prompt"), self.app.lang("clear_confirm"), parent=self
         ):
             return
         self.app.cfg = default_config()
@@ -2548,7 +2621,7 @@ class SettingsWindow(tk.Toplevel):
         self.destroy()
 
     def _close_app(self):
-        if messagebox.askyesno("关闭", "是否关闭程序？", parent=self):
+        if messagebox.askyesno(self.app.lang("prompt"), self.app.lang("close_confirm"), parent=self):
             self.app.quit_app()
 
     def _done(self):
@@ -2572,9 +2645,10 @@ def main():
         except tk.TclError:
             pass
         try:
+            _lm = LanguageManager.instance("zh")
             messagebox.showwarning(
-                "无名小工具",
-                "程序已经在运行中，请勿重复启动。",
+                _lm.get("app_title"),
+                _lm.get("already_running"),
                 parent=root,
             )
         finally:
