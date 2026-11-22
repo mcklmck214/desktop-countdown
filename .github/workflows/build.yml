@@ -59,13 +59,19 @@ jobs:
           python3 -m pip install -r requirements.txt pyinstaller
 
       - name: Build
-        run: >
-          python3 -m PyInstaller --noconfirm --clean --onefile --windowed
-          --name wmxgj_Beta0_8-linux-x86_64
-          --hidden-import pystray._xorg
-          --add-data "lang.json:."
-          --add-data "image.png:."
-          wmxgj_Beta0_8.py
+        run: |
+          python3 -m PyInstaller --noconfirm --clean --onefile --windowed \
+            --name wmxgj_Beta0_8-linux-x86_64 \
+            --hidden-import pystray._xorg \
+            --add-data "lang.json:." \
+            --add-data "image.png:." \
+            wmxgj_Beta0_8.py 2>&1 | tee pyinstaller.log
+
+      - name: Report build failure
+        if: failure()
+        run: |
+          echo "::error::python=$(python3 -V 2>&1)"
+          tail -n 12 pyinstaller.log | while IFS= read -r line; do echo "::error::$line"; done
 
       - uses: actions/upload-artifact@v4
         with:
