@@ -54,6 +54,11 @@
     "days_countdown": "天数倒计",
     "date_countdown": "日期倒计",
     "delete": "删除",
+    "reset_base_today": "重置基准日为今天",
+    "base_reset_done": "基准日已重置为今天",
+    "export_log": "导出日志",
+    "export_log_done": "日志已导出到：\n{path}",
+    "export_log_failed": "导出日志失败：{err}",
     "method": "方式",
     "n_days": "n 天后",
     "target_date": "指定日期",
@@ -101,6 +106,9 @@
     "days_out_of_range": "天数必须在 0 ~ {max}",
     "date_before_today": "目标日期不能早于今天",
     "date_too_far": "距离今天不能超过 {max} 天",
+    "date_empty": "请输入日期",
+    "date_format": "日期格式应为 yyyy年mm月dd日",
+    "date_invalid": "日期不存在，请检查年月日",
     "delete_confirm": "确定删除「{name}」？",
     "already_running": "程序已经在运行中，请勿重复启动。",
     "close_confirm": "是否关闭程序？",
@@ -137,12 +145,12 @@
     "color_pink": "粉",
     "color_gray": "灰",
     "changelog_lines": [
-      "Beta 0.7：新增多语言支持（中文 / English / 日本語）",
-      "设置中可切换界面语言，重启程序后完全生效",
-      "设置窗口标签宽度放宽，英文 / 日文长译文不再截断",
-      "关于页的程序名与作者名保持原文，不随语言翻译",
-      "修复 Linux 下托盘标题含中文导致托盘启动失败",
-      "从 Beta 0.6 升级：直接覆盖即可，存档与设置自动保留"
+      "Beta 0.8：修复「n 天后」倒计时不减少，新增「重置基准日」",
+      "托盘与关于页新增「导出日志」，进程检测间隔放宽至 10 秒",
+      "Linux 极简模式（纯色 / 半透明）与快捷键降级",
+      "字体自动探测与高分屏 DPI 缩放适配",
+      "代码拆分为 config / i18n / dialogs，单实例改用文件锁",
+      "新增 GitHub Actions 自动构建；从 Beta 0.7 升级直接覆盖即可"
     ],
     "download_tool": "下载工具",
     "uninstall_tool": "卸载工具",
@@ -160,7 +168,11 @@
       ["操作说明", ["左键拖动窗口移动。", "右键打开菜单。", "锁定后整窗鼠标穿透。"]],
       ["托盘与自动隐藏", ["最小化到托盘后仍在运行。", "可在「设置 → 自动隐藏设置」配置：", "当某个程序运行时自动隐藏倒计时。"]],
       ["开始使用", ["点击右下角托盘图标，或右键窗口，", "选择「新增倒计时」即可开始。"]]
-    ]
+    ],
+    "unlock": "解锁窗口",
+    "linux_simple": "Linux 极简模式",
+    "solid": "纯色",
+    "semi_transparent": "半透明"
   },
   "en": {
     "app_title": "Nameless Widget",
@@ -217,6 +229,11 @@
     "days_countdown": "Days Countdown",
     "date_countdown": "Date Countdown",
     "delete": "Delete",
+    "reset_base_today": "Reset Start Date to Today",
+    "base_reset_done": "Start date has been reset to today.",
+    "export_log": "Export Log",
+    "export_log_done": "Log exported to:\n{path}",
+    "export_log_failed": "Failed to export log: {err}",
     "method": "Method",
     "n_days": "In n days",
     "target_date": "Target date",
@@ -264,6 +281,9 @@
     "days_out_of_range": "Days must be between 0 and {max}",
     "date_before_today": "Target date cannot be earlier than today",
     "date_too_far": "Cannot be more than {max} days from today",
+    "date_empty": "Please enter a date",
+    "date_format": "Date format should be yyyy年mm月dd日",
+    "date_invalid": "That date does not exist. Please check the year, month and day",
     "delete_confirm": "Delete \"{name}\"?",
     "already_running": "The program is already running. Do not launch it again.",
     "close_confirm": "Quit the program?",
@@ -300,12 +320,12 @@
     "color_pink": "Pink",
     "color_gray": "Gray",
     "changelog_lines": [
-      "Beta 0.7: Added multi-language support (中文 / English / 日本語)",
-      "Switch interface language in Settings; fully applied after restart",
-      "Widened setting labels so long English/Japanese text is no longer cut off",
-      "Program and author names in About stay untranslated",
-      "Fixed tray failing to start on Linux when the title contains Chinese",
-      "Upgrading from Beta 0.6: just replace the executable, saves and settings are kept"
+      "Beta 0.8: Fixed “n days later” countdown not decreasing; added Reset base date",
+      "Added Export log to the tray and About; process polling relaxed to 10 seconds",
+      "Linux simple mode (solid / translucent) and keyboard shortcut fallback",
+      "Automatic font detection and HiDPI scaling support",
+      "Split code into config / i18n / dialogs; single instance now uses a file lock",
+      "Added GitHub Actions builds; upgrade from Beta 0.7 by replacing the executable"
     ],
     "download_tool": "Download Tool",
     "uninstall_tool": "Uninstall Tool",
@@ -323,7 +343,11 @@
       ["How to Use", ["Drag with left mouse button to move.", "Right-click to open the menu.", "When locked, the whole window is click-through."]],
       ["Tray & Auto-Hide", ["It keeps running after minimizing to tray.", "Configure auto-hide in Settings → Auto-Hide Settings:", "the countdown hides when a listed app is running."]],
       ["Get Started", ["Click the tray icon or right-click the window,", "then choose \"Add Countdown\" to begin."]]
-    ]
+    ],
+    "unlock": "Unlock window",
+    "linux_simple": "Linux simple mode",
+    "solid": "Solid",
+    "semi_transparent": "Semi-transparent"
   },
   "ja": {
     "app_title": "名無しウィジェット",
@@ -380,6 +404,11 @@
     "days_countdown": "日数カウントダウン",
     "date_countdown": "日付カウントダウン",
     "delete": "削除",
+    "reset_base_today": "基準日を今日にリセット",
+    "base_reset_done": "基準日を今日にリセットしました",
+    "export_log": "ログを書き出す",
+    "export_log_done": "ログを書き出しました：\n{path}",
+    "export_log_failed": "ログの書き出しに失敗しました：{err}",
     "method": "方式",
     "n_days": "n日後",
     "target_date": "指定日付",
@@ -427,6 +456,9 @@
     "days_out_of_range": "日数は 0 〜 {max} の範囲で入力してください",
     "date_before_today": "対象日付は今日より前にできません",
     "date_too_far": "今日から {max} 日以内にしてください",
+    "date_empty": "日付を入力してください",
+    "date_format": "日付の形式は yyyy年mm月dd日 です",
+    "date_invalid": "存在しない日付です。年月日を確認してください",
     "delete_confirm": "「{name}」を削除しますか？",
     "already_running": "プログラムはすでに起動しています。重複して起動しないでください。",
     "close_confirm": "プログラムを終了しますか？",
@@ -463,12 +495,12 @@
     "color_pink": "ピンク",
     "color_gray": "灰",
     "changelog_lines": [
-      "Beta 0.7：多言語対応を追加（中文 / English / 日本語）",
-      "設定からインターフェース言語を切り替え可能（再起動後に完全反映）",
-      "設定項目のラベル幅を広げ、英語・日本語の長文が切れないよう改善",
-      "「このアプリについて」のアプリ名と作者名は翻訳しない",
-      "Linux でタイトルに中国語が含まれるとトレイが起動しない問題を修正",
-      "Beta 0.6 からのアップグレード：実行ファイルを置き換えるだけで、保存データと設定は保持されます"
+      "Beta 0.8：「n 日後」のカウントダウンが減らない不具合を修正し、「基準日をリセット」を追加",
+      "トレイと「このアプリについて」にログ書き出しを追加、プロセス検出を 10 秒間隔に",
+      "Linux 簡易モード（単色 / 半透明）とキーボードショートカットへのフォールバック",
+      "フォントの自動検出と高解像度ディスプレイの DPI スケーリングに対応",
+      "コードを config / i18n / dialogs に分割し、単一インスタンスをファイルロックに変更",
+      "GitHub Actions による自動ビルドを追加。Beta 0.7 からは実行ファイルを置き換えるだけで更新可能"
     ],
     "download_tool": "ツールをダウンロード",
     "uninstall_tool": "ツールをアンインストール",
@@ -486,6 +518,10 @@
       ["操作方法", ["左ドラッグでウィンドウを移動。", "右クリックでメニューを開く。", "ロックするとウィンドウ全体がクリック透過になります。"]],
       ["トレイと自動非表示", ["トレイに最小化しても実行し続けます。", "「設定 → 自動非表示設定」で設定できます：", "指定したプログラムが起動している間、カウントダウンを自動的に非表示にします。"]],
       ["使い始める", ["右下のトレイアイコンをクリックするか、ウィンドウを右クリックし、", "「カウントダウン追加」を選択して始めましょう。"]]
-    ]
+    ],
+    "unlock": "ロック解除",
+    "linux_simple": "Linux 簡易モード",
+    "solid": "単色",
+    "semi_transparent": "半透明"
   }
 }

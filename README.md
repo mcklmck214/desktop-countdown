@@ -10,7 +10,7 @@
 
 **语言：** **简体中文** | [English](README.en.md) | [日本語](README.ja.md)
 
-> 当前版本：**Beta 0.7**
+> 当前版本：**Beta 0.8**
 
 ## 功能
 
@@ -20,7 +20,7 @@
 - **自动排序**：条目按剩余天数升序排列，已过期的沉到底部
 - **分档计时色**：今天 / 3 天内 / 7 天内 / 30 天内 / 365 天内 / 1000 天内各用一种颜色，支持自定义
 - **无边框悬浮窗**：半透明深色底板 + 系统阴影 + Windows 11 圆角，可拖动、可锁定
-- **系统托盘**：隐藏 / 显示、锁定、设置、使用引导、工具箱、关于
+- **系统托盘**：隐藏 / 显示、锁定、设置、使用引导、工具箱、关于、导出日志
 - **右键菜单**：主页右键即可新增、设置、锁定、隐藏
 - **双击编辑**：双击条目修改名称、时间、颜色
 - **便携模式**：程序目录放一个 `portable.txt`，存档就写到程序目录，不碰用户主目录
@@ -100,7 +100,7 @@ Kali Linux（打包版，Xfce 桌面，设置与关于窗口）：
 
 ![Kali](docs/screenshots/linux-kali.png)
 
-NOI Linux（Ubuntu 20.04 内核，只能用 `python3 wmxgj_Beta0_7.py` 源码运行）：
+NOI Linux（Ubuntu 20.04 内核，只能用 `python3 wmxgj_Beta0_8.py` 源码运行）：
 
 ![NOI Linux](docs/screenshots/linux-noi.png)
 
@@ -113,17 +113,17 @@ Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈�
 | Windows 11 | 已验证，支持系统圆角与 DWM 阴影 |
 | Windows 10 | 已验证 |
 | Windows 8.1 | 已验证 |
-| Windows 7 / Vista | Windows 7 已验证（Beta 0.7，Python 3.8 打包，64 位）；Vista 未测试 |
+| Windows 7 / Vista | Windows 7 已验证（Beta 0.8，Python 3.8 打包，64 位）；Vista 未测试 |
 | Kali Linux | 已验证，打包版 full / lite 均可运行 |
 | Ubuntu 24.04 | 已验证，使用打包版 |
-| NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 wmxgj_Beta0_7.py` |
+| NOI Linux（Ubuntu 20.04） | 仅源码运行：打包版依赖较新的 glibc，请用 `python3 wmxgj_Beta0_8.py` |
 
 ## 下载
 
 | 渠道 | 链接 | 提取码 |
 | --- | --- | --- |
 | GitHub Releases（推荐） | <https://github.com/mcklmck214/desktop-countdown/releases> | 无需 |
-| 蓝奏云 | <https://wwbjl.lanzout.com/b01i5ystif> | `stbw` |
+| 蓝奏云 | <https://wwbjl.lanzout.com/b01i60gmid> | `stbw` |
 | EdgeCOS 边缘云 | <https://user.edgecos.com/s/NCxRhxJx> | 无需 |
 | 123 云盘 | <https://1845990486.share.123pan.cn/123pan/APOqTd-sZLFh> | 无需 |
 | 夸克网盘 | <https://pan.quark.cn/s/a979bc4c2900?pwd=nbM1> | `nbM1` |
@@ -132,22 +132,27 @@ Linux 下没有 `-transparentcolor` 抠底，窗口以半透明深色底板呈�
 ## 运行
 
 ```bash
-pip install pystray pillow
-python wmxgj_Beta0_7.py
+pip install -r requirements.txt
+python wmxgj_Beta0_8.py
 ```
 
 - 依赖 `tkinter`（标准库）、`pystray`、`Pillow`（托盘图标；缺失时自动降级为快捷键操作）
-- 启动后不会出现任务栏图标，一切从**系统托盘**开始；托盘不可见时按 `Ctrl+Shift+L` 切换锁定
+- 启动后不会出现任务栏图标，一切从**系统托盘**开始；托盘不可见时按 `Ctrl+Shift+L` 切换锁定、`Ctrl+Shift+N` 新增倒计时（Linux lite 版托盘不可用时会自动启用这两个快捷键）
+- Linux 下可在设置中切换“Linux 极简模式”：半透明，或纯色底板（不使用透明，适合无合成器的桌面）
 - Linux 打包版：Releases 提供 **full**（含 GTK 托盘依赖，约 123 MB）与 **lite**（精简版，托盘不可用自动降级，约 22 MB）两种，`chmod +x` 后直接运行（Kali / Ubuntu 24.04 已验证）
 
 ## 文件结构
 
 ```
-wmxgj_Beta0_7.py  主程序：窗口、菜单、对话框、托盘、单实例
-utils.py          通用工具：路径、日期、DPI、DWM 阴影/圆角、多屏工作区、开机自启
-storage.py        配置读写：存档路径、原子写入、便携模式
+wmxgj_Beta0_8.py  主程序：窗口、菜单、托盘、单实例、核心业务
+config.py         共享常量：版本、配色、字体探测、按钮与居中
+dialogs.py        全部 Toplevel 弹窗
+i18n.py           多语言管理
+utils.py          通用工具：路径、日期、DPI、DWM 阴影/圆角、多屏工作区、开机自启、日志
+storage.py        配置读写：存档路径、原子写入、便携模式、单实例文件锁
 lang.json         界面翻译（zh / en / ja）
 image.png         托盘图标
+requirements.txt  运行依赖（pystray、Pillow）
 OLD_FILES/        历史版本源码与打包产物（仅存档，不参与运行）
 ```
 
@@ -161,6 +166,7 @@ OLD_FILES/        历史版本源码与打包产物（仅存档，不参与运�
 
 | 版本 | 主要内容 |
 | --- | --- |
+| Beta 0.8 | 修复「n 天后」倒计时不减与重置基准日、导出日志、进程检测降频、Linux 极简模式与快捷键降级、字体/DPI 适配、模块化拆分、跨平台文件锁、CI 自动构建 |
 | Beta 0.7 | 多语言界面（中/英/日）、设置内语言切换、更新日志扩充、Linux 托盘标题降级 |
 | Beta 0.6 | 按应用名单自动隐藏、设置页名单管理、Win7 兼容打包 |
 | Beta 0.5 | 关于页 GitHub 链接、Linux full/lite 打包 |

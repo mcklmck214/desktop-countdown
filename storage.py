@@ -140,6 +140,7 @@ def default_config():
         "font_size": 25,
         "bg_mode": "panel",
         "win_style": "edge_plate",
+        "linux_simple_plate": False,
         "edge_color": None,
         "plate_color": None,
         "style_version": 2,
@@ -175,7 +176,7 @@ def load_config():
     for k in ("alpha", "font_size", "bg_mode", "style_version", "locked", "topmost",
               "auto_start", "hidden", "x", "y", "text_color", "time_color",
               "menu_text_color", "log_dir", "win_style", "edge_color",
-              "plate_color", "timer_colors", "language"):
+              "plate_color", "timer_colors", "language", "linux_simple_plate"):
         if k in data:
             cfg[k] = data[k]
     # 旧版存档只有 transparent_bg，未迁移时统一按新版默认（深色底板）显示
@@ -231,3 +232,82 @@ def save_config(cfg):
                 os.remove(tmp)
         except OSError:
             pass
+
+
+# --------------------------------------------------------------------------- #
+# 单实例锁（跨平台文件锁：Windows 用 msvcrt，Unix 用 fcntl）
+# --------------------------------------------------------------------------- #
+LOCK_NAME = ".instance.lock"
+_instance_lock_file = None
+
+
+def _lock_path():
+    d = get_save_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, LOCK_NAME)
+
+
+def _try_lock(file_obj):
+    if sys.platform.startswith("win"):
+        import msvcrt
+        file_obj.seek(0)
+        msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock(file_obj):
+    try:
+        if sys.platform.startswith("win"):
+            import msvcrt
+            file_obj.seek(0)
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
+def acquire_instance_lock():
+    """尝试对存档目录下的锁文件加锁，判断是否已有实例在运行。
+
+    返回 True 表示当前是首个实例（已持有锁）；
+    返回 False 表示锁已被其他实例占用。
+    若锁文件无法创建（例如只读目录），为避免阻塞启动仍返回 True。
+    """
+    global _instance_lock_file
+    if _instance_lock_file is not None:
+        return True
+    try:
+        f = open(_lock_path(), "a+", encoding="utf-8")
+    except OSError:
+        return True
+    try:
+        f.seek(0)
+        if os.fstat(f.fileno()).st_size == 0:
+            f.write("0")
+            f.flush()
+        _try_lock(f)
+    except OSError:
+        f.close()
+        return False
+    _instance_lock_file = f
+    return True
+
+
+def release_instance_lock():
+    """释放单实例锁（关闭锁文件即解锁）。"""
+    global _instance_lock_file
+    if _instance_lock_file is None:
+        return
+    _unlock(_instance_lock_file)
+    try:
+        _instance_lock_file.close()
+    except OSError:
+        pass
+    _instance_lock_file = None

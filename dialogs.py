@@ -1,1048 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-无名小工具  Beta 0.7
-Python 3.8+ + tkinter + pystray + Pillow
-"""
+无名小工具 · 弹窗集合
+条目编辑、新增倒计时、选色、默认/文字设置、引导、关于、工具箱等全部 Toplevel。
 
-print("请勿关闭这个窗口(^_^)")      #这行代码在以py文件的方式运行时显示
+注意：主窗口为 overrideredirect(True) 无边框窗口，
+弹窗一律不要调用 transient()，也不要把会弹出 Toplevel 的操作放进 tk.Menu。
+"""
 
 import os
 import sys
-import threading
-import webbrowser
-import queue
-import errno
-import socket
 import subprocess
-from datetime import date, datetime, timedelta
+import webbrowser
+from datetime import date, timedelta
+
 import tkinter as tk
 from tkinter import messagebox, filedialog
 
 from utils import (
-    app_dir, resource_dir, today, parse_date_str, item_remaining, set_auto_start,
-    enable_dpi_awareness, enable_dwm_shadow, enable_rounded_corners,
-    clamp_to_work_area, setup_logging, set_click_through, LOG,
+    app_dir, resource_dir, today, parse_date_str, set_auto_start,
 )
 from storage import (
-    default_config, load_config, save_config, get_config_path,
-    get_save_dir, set_save_dir, is_portable, set_portable,
-    migrate_legacy_config, get_log_dir,
+    save_config, get_save_dir, set_save_dir, is_portable, set_portable,
+    default_config,
 )
-
-try:
-    import pystray
-    from PIL import Image, ImageDraw
-    HAS_TRAY = True
-except ImportError:
-    HAS_TRAY = False
-    pystray = None
-    Image = None
-    ImageDraw = None
-
-
-# --------------------------------------------------------------------------- #
-# 常量
-# --------------------------------------------------------------------------- #
-APP_VERSION = "Beta 0.7"
-APP_NAME = "无名小工具"
-AUTHOR_NAME = "四天不晚"
-MAX_DAYS = 1000
-SINGLE_INSTANCE_PORT = 48291
-
-BG_DARK = "#12161c"
-BG_PANEL = "#1b2027"
-FG_MAIN = "#e8eef5"
-FG_SUB = "#8b9bab"
-ACCENT = "#4fc3f7"
-OVERDUE = "#ef5350"
-ENTRY_BG = "#0e1218"
-LINK_COLOR = "#5ec2ff"
-TRANSPARENT_KEY = "#010203"
-GLASS_EDGE = "#39434f"
-BTN_BG = "#2a323c"
-BTN_HOVER = "#3a4550"
-BTN_PRIMARY = "#2f6fb5"
-BTN_PRIMARY_HOVER = "#3b82d1"
-
-DEFAULT_COLORS = {
-    "today": "#ffffff",
-    "3": "#ef5350",
-    "7": "#f06292",
-    "30": "#ffca28",
-    "365": "#42a5f5",
-    "1000": "#ffffff",
-}
-RANGE_KEYS = ["today", "3", "7", "30", "365", "1000"]
-
-BILI_URL = "https://space.bilibili.com/2061499488"
-AFDIAN_URL = "https://ifdian.net/a/wmxgj"
-QQ_FEEDBACK = ("823223052", "https://qm.qq.com/q/livvSfQFfG", "无名小工具反馈群")
-QQ_CHAT = ("684287871", "https://qm.qq.com/q/1Q95hMYAxG", "无名小工具交流群")
-GITHUB_URL = "https://github.com/mcklmck214/desktop-countdown"
-
-if sys.platform.startswith("win"):
-    UI_FONT = "Microsoft YaHei UI"
-elif sys.platform == "darwin":
-    UI_FONT = "PingFang SC"
-else:
-    UI_FONT = "Noto Sans CJK SC"
-
-WEEKDAY_CN = ("一", "二", "三", "四", "五", "六", "日")
-
-
-# --------------------------------------------------------------------------- #
-# 资源路径 & 多语言
-# --------------------------------------------------------------------------- #
-def get_resource_path(relative_path):
-    """兼容 PyInstaller 单文件打包后的临时路径。"""
-    if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
-
-
-class LanguageManager:
-    """多语言管理器：从 lang.json 加载 zh / en / ja 三语文案。"""
-
-    SUPPORTED = ("zh", "en", "ja")
-    _instance = None
-
-    def __init__(self, lang="zh"):
-        self._data = {}
-        self._lang = lang if lang in self.SUPPORTED else "zh"
-        self._load()
-
-    @classmethod
-    def instance(cls, lang=None):
-        if cls._instance is None:
-            cls._instance = cls(lang or "zh")
-        elif lang is not None:
-            cls._instance.set_language(lang)
-        return cls._instance
-
-    def _load(self):
-        path = get_resource_path("lang.json")
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                import json
-                self._data = json.load(f)
-        except Exception as exc:
-            print(f"[LanguageManager] 加载 lang.json 失败: {exc}", file=sys.stderr)
-            self._data = {}
-
-    def set_language(self, lang):
-        if lang in self.SUPPORTED:
-            self._lang = lang
-
-    @property
-    def language(self):
-        return self._lang
-
-    def get(self, key, **kwargs):
-        """取翻译文案，支持 {placeholder} 格式化；缺失时回退 zh，再回退 key。"""
-        text = self._data.get(self._lang, {}).get(key)
-        if text is None:
-            text = self._data.get("zh", {}).get(key)
-        if text is None:
-            text = key
-        if kwargs:
-            try:
-                text = text.format(**kwargs)
-            except (KeyError, IndexError):
-                pass
-        return text
-
-    def get_list(self, key):
-        """取列表型文案（如 guide_steps）。"""
-        value = self._data.get(self._lang, {}).get(key)
-        if value is None:
-            value = self._data.get("zh", {}).get(key)
-        if not isinstance(value, list):
-            return []
-        return value
-
-# --------------------------------------------------------------------------- #
-# 进程检测（Beta 0.6 自动隐藏）
-# --------------------------------------------------------------------------- #
-def list_running_processes():
-    """返回当前运行的进程名集合（小写，纯标准库实现，跨平台）。"""
-    names = set()
-    try:
-        if sys.platform.startswith("win"):
-            # Windows: tasklist /nh /fo csv，输出为 gbk 编码
-            out = subprocess.run(
-                ["tasklist", "/nh", "/fo", "csv"],
-                capture_output=True, creationflags=0x08000000,
-            ).stdout
-            text = out.decode("gbk", errors="ignore")
-            for line in text.splitlines():
-                line = line.strip()
-                if not line or line.startswith('"') is False:
-                    continue
-                # CSV 第一列是进程名，带引号
-                parts = line.split('","')
-                if parts:
-                    name = parts[0].lstrip('"').rstrip('"')
-                    if name:
-                        names.add(name.lower())
-        else:
-            # Linux / macOS: 遍历 /proc 或 ps
-            if os.path.isdir("/proc"):
-                for entry in os.listdir("/proc"):
-                    if not entry.isdigit():
-                        continue
-                    try:
-                        with open(os.path.join("/proc", entry, "comm"), "r") as f:
-                            comm = f.read().strip()
-                        if comm:
-                            names.add(comm.lower())
-                    except OSError:
-                        continue
-            else:
-                out = subprocess.run(
-                    ["ps", "-eo", "comm="], capture_output=True, text=True,
-                ).stdout
-                for line in out.splitlines():
-                    comm = line.strip()
-                    if comm:
-                        names.add(comm.lower())
-    except Exception:
-        pass
-    return names
-
-
-def any_process_running(app_names):
-    """app_names 为进程名列表（大小写不敏感），任一在运行返回 True。"""
-    if not app_names:
-        return False
-    running = list_running_processes()
-    targets = {n.lower() for n in app_names if n}
-    return bool(running & targets)
-
-
-# --------------------------------------------------------------------------- #
-# 界面辅助
-# --------------------------------------------------------------------------- #
-def range_key_for(r):
-    if r <= 0:
-        return "today"
-    if r <= 3:
-        return "3"
-    if r <= 7:
-        return "7"
-    if r <= 30:
-        return "30"
-    if r <= 365:
-        return "365"
-    return "1000"
-
-
-def default_color_for(r, overrides):
-    if r < 0:
-        return OVERDUE
-    key = range_key_for(r)
-    return overrides.get(key) or DEFAULT_COLORS.get(key) or FG_MAIN
-
-
-def _sink_key(item):
-    """排序键：剩余天数升序，已过期沉底（越早过期越靠后）。"""
-    try:
-        r = item_remaining(item)
-    except Exception:
-        return (2, 0)
-    if r >= 0:
-        return (0, r)
-    return (1, -r)
-
-
-def make_button(parent, text, command, primary=False, **kw):
-    bg = BTN_PRIMARY if primary else BTN_BG
-    fg = "#ffffff" if primary else FG_MAIN
-    abg = BTN_PRIMARY_HOVER if primary else BTN_HOVER
-    opts = dict(bg=bg, fg=fg, activebackground=abg, activeforeground=fg,
-                relief="flat", bd=0, padx=12, pady=4,
-                font=(UI_FONT, 10), cursor="hand2")
-    opts.update(kw)
-    return tk.Button(parent, text=text, command=command, **opts)
-
-
-def center_window(win, parent=None):
-    win.update_idletasks()
-    w, h = win.winfo_reqwidth(), win.winfo_reqheight()
-    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-    if parent is not None:
-        try:
-            px, py = parent.winfo_rootx(), parent.winfo_rooty()
-            pw = parent.winfo_width()
-            x = px - w - 20
-            if x < 10:
-                x = px + pw + 20
-            y = py
-        except tk.TclError:
-            x = (sw - w) // 2
-            y = (sh - h) // 2
-    else:
-        x = (sw - w) // 2
-        y = (sh - h) // 2
-    x = max(10, min(x, sw - w - 10))
-    y = max(10, min(y, sh - h - 10))
-    win.geometry(f"+{x}+{y}")
-
-
-# --------------------------------------------------------------------------- #
-# 单实例锁（基于本机端口绑定，跨平台，无需额外依赖）
-# --------------------------------------------------------------------------- #
-_instance_lock_socket = None
-
-
-def acquire_instance_lock():
-    """尝试绑定本机端口以判断是否已有实例在运行。
-
-    返回 True 表示当前是首个实例（已持有锁）；
-    返回 False 表示端口已被占用，即已有实例在运行。
-    若遇到端口占用以外的异常，为避免阻塞正常启动，仍返回 True。
-    """
-    global _instance_lock_socket
-    if _instance_lock_socket is not None:
-        return True
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
-        s.listen(1)
-    except OSError as exc:
-        s.close()
-        if exc.errno == errno.EADDRINUSE:
-            return False
-        # 其他异常（极少见）不阻塞启动
-        return True
-    _instance_lock_socket = s
-    return True
-
-
-def release_instance_lock():
-    """释放单实例锁（关闭占用端口的 socket）。"""
-    global _instance_lock_socket
-    if _instance_lock_socket is not None:
-        try:
-            _instance_lock_socket.close()
-        except OSError:
-            pass
-        _instance_lock_socket = None
-
-
-# --------------------------------------------------------------------------- #
-# 主应用
-# --------------------------------------------------------------------------- #
-class CountdownApp:
-    def __init__(self):
-        # 存档文件不存在即视为第一次启动
-        self._first_launch = not os.path.exists(get_config_path())
-        self.cfg = load_config()
-        self._lang_mgr = LanguageManager.instance(self.cfg.get("language", "zh"))
-        self._hidden = bool(self.cfg.get("hidden", False))
-        self._auto_hidden = False  # Beta 0.6：标记是否由自动隐藏机制隐藏
-        self._drag_anchor = None
-        self.settings_win = None
-        self.about_win = None
-        self.text_settings_win = None
-        self.guide_win = None
-        self.toolbox_win = None
-        self.right_menu = None
-        self.tray_icon = None
-        self._tray_queue = queue.Queue()
-        self.row_name_labels = []
-        self.row_days_labels = []
-        self._purge_prompting = False
-        self._purge_declined = set()
-
-        self.root = tk.Tk()
-        self.root.title(self._lang_mgr.get("app_title"))
-        self.root.overrideredirect(True)
-        try:
-            self.root.attributes("-topmost", bool(self.cfg.get("topmost", True)))
-        except tk.TclError:
-            pass
-
-        self.bg = BG_DARK
-        if sys.platform.startswith("win") and self.cfg.get("bg_mode") == "transparent":
-            self.bg = TRANSPARENT_KEY
-        self.root.configure(bg=self.bg)
-
-        self._refresh_days_basis()
-        self._build_ui()
-        self._apply_bg_and_alpha()
-        self._apply_dwm_shadow()
-        self.rebuild_rows()
-        self._restore_position()
-        self._tick()
-        self._start_tray()
-        self.root.after(80, self._poll_tray_queue)
-        self.root.after(2000, self._auto_hide_check)  # Beta 0.6
-
-        if not HAS_TRAY:
-            self.root.bind("<Control-Shift-L>", lambda e: self._toggle_lock())
-
-        if self._is_locked():
-            # 启动即处于锁定：整窗鼠标穿透（仅 Windows 生效）
-            set_click_through(self.root, True)
-
-        if self._hidden:
-            self.root.withdraw()
-        elif self._first_launch:
-            # 第一次启动：先落盘配置（下次启动便不再算首次），再弹出引导
-            save_config(self.cfg)
-            self.root.after(400, self.open_guide)
-
-    # ---------------- 基础 ---------------- #
-    @property
-    def lang(self):
-        """取翻译文案的快捷方式：self.lang("key", **kwargs)。"""
-        return self._lang_mgr.get
-
-    def _refresh_days_basis(self):
-        t = today().isoformat()
-        changed = False
-        for it in self.cfg.get("items", []):
-            if it.get("mode") == "days" and it.get("base") != t:
-                it["base"] = t
-                changed = True
-        if changed:
-            save_config(self.cfg)
-
-    def _is_locked(self):
-        return bool(self.cfg.get("locked", False))
-
-    def _poll_tray_queue(self):
-        try:
-            while True:
-                fn = self._tray_queue.get_nowait()
-                try:
-                    fn()
-                except Exception as exc:
-                    print("托盘回调错误:", exc, file=sys.stderr)
-                    LOG.error("托盘回调错误: %s", exc)
-        except queue.Empty:
-            pass
-        try:
-            self.root.after(80, self._poll_tray_queue)
-        except tk.TclError:
-            pass
-
-    # ---------------- 界面 ---------------- #
-    def _build_ui(self):
-        self.shell = tk.Frame(self.root, bg=GLASS_EDGE, bd=0, highlightthickness=0)
-        self.shell.pack(fill="both", expand=True)
-        self.container = tk.Frame(self.shell, bg=self.bg, bd=0, highlightthickness=0)
-        self.container.pack(fill="both", expand=True, padx=1, pady=1)
-
-        self.clock_label = tk.Label(
-            self.container, text="", font=(UI_FONT, 9),
-            fg=self.cfg.get("time_color") or FG_SUB, bg=self.bg, anchor="w",
-        )
-        self.clock_label.pack(fill="x", padx=15, pady=(8, 0))
-        self.clock_label.bind("<Double-Button-1>", self._on_clock_double)
-        self._bind_drag(self.clock_label)
-
-        self.rows_frame = tk.Frame(self.container, bg=self.bg)
-        self.rows_frame.pack(fill="both", expand=True, padx=15, pady=(6, 8))
-        self.rows_frame.columnconfigure(0, weight=1)
-
-        # 底板拖动（Beta 0.5）：点底板空白处也能拖窗。
-        # 无底模式下这些区域在 Windows 为键色像素、点击直接穿透到下层，
-        # 自然只在有底视觉时生效，不会与文字拖拽冲突
-        for plate in (self.shell, self.container, self.rows_frame):
-            plate.bind("<Button-1>", self._start_drag, add="+")
-            plate.bind("<B1-Motion>", self._on_drag, add="+")
-            plate.bind("<ButtonRelease-1>", self._end_drag, add="+")
-
-        # 右键菜单绑在根窗口上，子控件事件会冒泡到这里
-        self.root.bind("<Button-3>", self._show_right_menu)
-
-    def _bind_drag(self, widget):
-        widget.bind("<Button-1>", self._start_drag, add="+")
-        widget.bind("<B1-Motion>", self._on_drag, add="+")
-        widget.bind("<ButtonRelease-1>", self._end_drag, add="+")
-        for child in widget.winfo_children():
-            self._bind_drag(child)
-
-    # ---------------- 右键菜单 ---------------- #
-    def _show_right_menu(self, event):
-        # 锁定后不响应，解锁统一走托盘
-        if self._is_locked():
-            return
-        self._build_right_menu()
-        try:
-            self.right_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            try:
-                self.right_menu.grab_release()
-            except tk.TclError:
-                pass
-
-    def _build_right_menu(self):
-        if self.right_menu is not None:
-            try:
-                self.right_menu.destroy()
-            except tk.TclError:
-                pass
-        fg = self.cfg.get("menu_text_color") or FG_MAIN
-        m = tk.Menu(
-            self.root, tearoff=0, bg=BG_PANEL, fg=fg,
-            activebackground=BTN_HOVER, activeforeground=fg,
-            bd=0, font=(UI_FONT, 10),
-        )
-        m.add_command(label=self.lang("add_countdown"), command=self._open_add_dialog)
-        m.add_command(label=self.lang("settings"), command=self.open_settings)
-        m.add_command(label=self.lang("guide"), command=self.open_guide)
-        m.add_command(label=self.lang("toolbox"), command=self.open_toolbox)
-        m.add_command(label=self.lang("about"), command=self.open_about)
-        m.add_separator()
-        m.add_command(label=self.lang("lock"), command=self._toggle_lock)
-        m.add_command(label=self.lang("show_countdown") if self._hidden else self.lang("hide_countdown"),
-                      command=self._toggle_visibility)
-        m.add_separator()
-        m.add_command(label=self.lang("quit"), command=self.quit_app)
-        self.right_menu = m
-
-    # ---------------- 拖动 ---------------- #
-    def _start_drag(self, event):
-        if self._is_locked():
-            self._drag_anchor = None
-            return
-        self._drag_anchor = (event.x_root - self.root.winfo_x(),
-                             event.y_root - self.root.winfo_y())
-
-    def _on_drag(self, event):
-        if self._drag_anchor is None or self._is_locked():
-            return
-        dx, dy = self._drag_anchor
-        self.root.geometry(f"+{event.x_root - dx}+{event.y_root - dy}")
-
-    def _end_drag(self, event):
-        if self._drag_anchor is None:
-            return
-        self._drag_anchor = None
-        if self._is_locked():
-            return
-        try:
-            self.cfg["x"] = self.root.winfo_x()
-            self.cfg["y"] = self.root.winfo_y()
-            save_config(self.cfg)
-        except tk.TclError:
-            pass
-
-    # ---------------- 背景 & 透明度 ---------------- #
-    def _apply_bg_and_alpha(self):
-        # 窗口类型（Beta 0.5）：edge_plate 有边有底 / edge_only 有边无底 / none 无边无底
-        style = self.cfg.get("win_style")
-        if style not in ("edge_plate", "edge_only", "none"):
-            style = "edge_plate"
-        plate_color = self.cfg.get("plate_color") or BG_DARK
-        edge_color = self.cfg.get("edge_color") or GLASS_EDGE
-        # 逐像素透明（键色）仅 Windows 可用；其余平台无底样式回退为深色底板
-        use_key = (sys.platform.startswith("win") and style in ("edge_only", "none"))
-        self.bg = TRANSPARENT_KEY if use_key else plate_color
-        self.root.configure(bg=self.bg)
-        self._recolor(self.root)
-        try:
-            # 玻璃描边：无边无底时连同描边一起隐形；有边样式用自定义描边色
-            if style == "none" and use_key:
-                edge_bg = TRANSPARENT_KEY
-            else:
-                edge_bg = edge_color
-            self.shell.configure(bg=edge_bg)
-        except tk.TclError:
-            pass
-        try:
-            alpha = float(self.cfg.get("alpha", 0.72))
-        except (TypeError, ValueError):
-            alpha = 0.72
-        alpha = min(1.0, max(0.15, alpha))
-        if self._is_locked():
-            # 锁定后整体变淡，提示当前不可拖动 / 不可编辑
-            alpha = max(0.15, alpha * 0.6)
-        try:
-            self.root.attributes("-alpha", alpha)
-        except tk.TclError:
-            pass
-
-        if sys.platform.startswith("win"):
-            try:
-                self.root.attributes("-transparentcolor", self.bg if use_key else "")
-            except tk.TclError:
-                self.bg = BG_DARK
-                try:
-                    self.root.configure(bg=self.bg)
-                except tk.TclError:
-                    pass
-                self._recolor(self.root)
-
-        # 更新时钟颜色
-        try:
-            self.clock_label.configure(fg=self.cfg.get("time_color") or FG_SUB)
-        except tk.TclError:
-            pass
-
-    def _recolor(self, widget):
-        if isinstance(widget, tk.Toplevel):
-            return
-        try:
-            widget.configure(bg=self.bg)
-        except tk.TclError:
-            pass
-        for child in widget.winfo_children():
-            self._recolor(child)
-
-    # ---------------- 列表 ---------------- #
-    def rebuild_rows(self):
-        for w in self.rows_frame.winfo_children():
-            w.destroy()
-        self.row_name_labels.clear()
-        self.row_days_labels.clear()
-
-        fs = max(8, min(48, int(self.cfg.get("font_size", 25))))
-        # 按剩余天数升序，已过期的排到底部
-        items = sorted(self.cfg.get("items", []), key=_sink_key)
-
-        for i, item in enumerate(items):
-            name_color = item.get("name_color") or self.cfg.get("text_color") or FG_MAIN
-            name_lbl = tk.Label(
-                self.rows_frame, text=str(item.get("name", "")),
-                font=(UI_FONT, fs), fg=name_color, bg=self.bg, anchor="w",
-                cursor="hand2",
-            )
-            name_lbl.grid(row=i, column=0, sticky="w", pady=1)
-
-            days_lbl = tk.Label(
-                self.rows_frame, text="",
-                font=(UI_FONT, fs, "bold"), fg=ACCENT, bg=self.bg, anchor="e",
-                cursor="hand2",
-            )
-            days_lbl.grid(row=i, column=1, sticky="e", padx=(24, 0), pady=1)
-
-            self._bind_drag(name_lbl)
-            self._bind_drag(days_lbl)
-
-            name_lbl.bind("<Double-Button-1>",
-                          lambda e, it=item: self._open_name_dialog(it))
-            days_lbl.bind("<Double-Button-1>",
-                          lambda e, it=item: self._open_time_dialog(it))
-
-            self.row_name_labels.append((name_lbl, item))
-            self.row_days_labels.append((days_lbl, item))
-
-        if not items:
-            hint = tk.Label(
-                self.rows_frame, text=self.lang("empty_hint"),
-                font=(UI_FONT, max(9, fs // 2)), fg=FG_SUB, bg=self.bg, anchor="w",
-            )
-            hint.grid(row=0, column=0, columnspan=2, sticky="w")
-            self._bind_drag(hint)
-
-    def refresh(self):
-        if self._hidden:
-            return
-        t = today()
-
-        # 指定日期已过期：确认后删除
-        expired = []
-        for it in self.cfg.get("items", []):
-            if it.get("mode") != "date" or id(it) in self._purge_declined:
-                continue
-            try:
-                if item_remaining(it, t) < 0:
-                    expired.append(it)
-            except Exception:
-                pass
-        if expired and not self._purge_prompting:
-            self._purge_prompting = True
-            try:
-                names = "、".join(f"「{it.get('name', '')}」" for it in expired)
-                ok = messagebox.askyesno(
-                    self.lang("expired_title"),
-                    self.lang("expired_purge_msg", names=names),
-                    parent=self.root)
-            finally:
-                self._purge_prompting = False
-            if ok:
-                gone = {id(it) for it in expired}
-                self.cfg["items"] = [it for it in self.cfg.get("items", [])
-                                     if id(it) not in gone]
-                save_config(self.cfg)
-                self.rebuild_rows()
-                self.refresh()
-                return
-            self._purge_declined.update(id(it) for it in expired)
-
-        overrides = self.cfg.get("timer_colors", {}) or {}
-        for label, item in self.row_days_labels:
-            try:
-                r = item_remaining(item, t)
-            except Exception:
-                try:
-                    label.configure(text=self.lang("data_error"), fg=OVERDUE)
-                except tk.TclError:
-                    pass
-                continue
-            if r > 0:
-                text = f"{r}{self.lang('day_unit')}"
-            elif r == 0:
-                text = self.lang("today")
-            else:
-                text = self.lang("expired")
-            color = item.get("timer_color") or default_color_for(r, overrides)
-            try:
-                label.configure(text=text, fg=color)
-            except tk.TclError:
-                pass
-        for label, item in self.row_name_labels:
-            c = item.get("name_color") or self.cfg.get("text_color") or FG_MAIN
-            try:
-                label.configure(fg=c)
-            except tk.TclError:
-                pass
-
-    def _clock_text(self):
-        now = datetime.now()
-        wd_keys = ("weekday_mon", "weekday_tue", "weekday_wed",
-                   "weekday_thu", "weekday_fri", "weekday_sat", "weekday_sun")
-        wd = self.lang(wd_keys[now.weekday()])
-        s = self.lang("clock_format", date=now.strftime("%Y%m%d %H:%M:%S"), weekday=wd)
-        if self._is_locked():
-            s += "  🔒"
-        return s
-
-    def _tick(self):
-        try:
-            self.clock_label.configure(text=self._clock_text())
-            if not self._hidden:
-                self.refresh()
-        except tk.TclError:
-            return
-        self.root.after(1000, self._tick)
-
-    # ---------------- 双击入口 ---------------- #
-    def _on_clock_double(self, event):
-        if self._is_locked():
-            return
-        self.open_settings()
-
-    def _open_name_dialog(self, item):
-        if self._is_locked():
-            return
-        dlg = NameItemDialog(self.root, self, item)
-        if dlg.result:
-            item["name"] = dlg.result["name"]
-            item["name_color"] = dlg.result["name_color"]
-            save_config(self.cfg)
-            self.rebuild_rows()
-            self.refresh()
-
-    def _open_time_dialog(self, item):
-        if self._is_locked():
-            return
-        dlg = TimeItemDialog(self.root, self, item)
-        if dlg.result:
-            if dlg.result.get("delete"):
-                self.delete_item(item)
-                return
-            if dlg.result["mode"] == "days":
-                item["mode"] = "days"
-                item["days"] = dlg.result["days"]
-                item["base"] = today().isoformat()
-                item.pop("date", None)
-            else:
-                item["mode"] = "date"
-                item["date"] = dlg.result["date"]
-                item.pop("days", None)
-                item.pop("base", None)
-            item["timer_color"] = dlg.result["timer_color"]
-            save_config(self.cfg)
-            self.rebuild_rows()
-            self.refresh()
-
-    def delete_item(self, item):
-        items = self.cfg.get("items", [])
-        if not any(it is item for it in items):
-            return
-        self.cfg["items"] = [it for it in items if it is not item]
-        save_config(self.cfg)
-        self.rebuild_rows()
-        self.refresh()
-
-    # ---------------- 位置 ---------------- #
-    def _restore_position(self):
-        try:
-            self.root.update_idletasks()
-            w = self.root.winfo_reqwidth()
-            h = self.root.winfo_reqheight()
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-        except tk.TclError:
-            return
-        x, y = self.cfg.get("x"), self.cfg.get("y")
-        if x is None or y is None:
-            x, y = sw - w - 40, 60
-        # 多显示器：按窗口所在显示器的工作区钳制，副屏负坐标也能正确还原
-        x, y = clamp_to_work_area(x, y, w, h, (sw, sh))
-        self.root.geometry(f"+{x}+{y}")
-
-    def _apply_dwm_shadow(self):
-        if not sys.platform.startswith("win"):
-            return
-        try:
-            self.root.update_idletasks()
-        except tk.TclError:
-            return
-        # 无边无底样式：关闭系统阴影与圆角，否则窗口矩形仍有一圈阴影轮廓，
-        # 视觉上与"有边无底"没有区别
-        enable = self.cfg.get("win_style") != "none"
-        enable_dwm_shadow(self.root, enable)
-        enable_rounded_corners(self.root, enable)
-
-    # ---------------- 托盘 ---------------- #
-    def _start_tray(self):
-        if not HAS_TRAY:
-            print("未安装 pystray / Pillow，无法启用系统托盘", file=sys.stderr)
-            return
-        img = self._load_tray_image()
-        menu = pystray.Menu(
-            pystray.MenuItem(self.lang("show_hide"), self._tray_toggle_show, default=True),
-            pystray.MenuItem(self.lang("add_countdown"), self._tray_add),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(self.lang("lock"), self._tray_toggle_lock,
-                             checked=lambda it: bool(self.cfg.get("locked", False))),
-            pystray.MenuItem(self.lang("topmost"), self._tray_toggle_topmost,
-                             checked=lambda it: bool(self.cfg.get("topmost", True))),
-            pystray.MenuItem(self.lang("settings"), self._tray_settings),
-            pystray.MenuItem(self.lang("guide"), self._tray_guide),
-            pystray.MenuItem(self.lang("toolbox"), self._tray_toolbox),
-            pystray.MenuItem(self.lang("about"), self._tray_about),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(self.lang("quit"), self._tray_quit),
-        )
-        # X11 后端的托盘标题按 latin-1 编码，中文会抛 UnicodeEncodeError，
-        # 因此非 latin-1 可编码时退回英文名，保证托盘仍能启动
-        title = self.lang("app_title")
-        try:
-            title.encode("latin-1")
-        except UnicodeEncodeError:
-            title = "Desktop Countdown"
-        try:
-            self.tray_icon = pystray.Icon("desktop_countdown", img, title, menu)
-            threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        except Exception as exc:
-            print("托盘启动失败:", exc, file=sys.stderr)
-
-    def _load_tray_image(self, size=64):
-        here = resource_dir()
-        for name in ("image.png", "icon.png", "tray.png"):
-            p = os.path.join(here, name)
-            if os.path.exists(p):
-                try:
-                    img = Image.open(p).convert("RGBA")
-                    return img.resize((size, size), Image.LANCZOS)
-                except Exception:
-                    pass
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.ellipse((4, 4, size - 4, size - 4), fill=(79, 195, 247, 255))
-        d.ellipse((size // 2 - 6, size // 2 - 6, size // 2 + 6, size // 2 + 6),
-                  fill=(255, 255, 255, 255))
-        return img
-
-    def _tray_toggle_show(self, icon=None, item=None):
-        self._tray_queue.put(self._toggle_visibility)
-
-    def _tray_add(self, icon=None, item=None):
-        self._tray_queue.put(self._open_add_dialog)
-
-    def _tray_toggle_lock(self, icon=None, item=None):
-        self._tray_queue.put(self._toggle_lock)
-
-    def _tray_toggle_topmost(self, icon=None, item=None):
-        self._tray_queue.put(self._toggle_topmost)
-
-    def _tray_settings(self, icon=None, item=None):
-        self._tray_queue.put(self.open_settings)
-
-    def _tray_guide(self, icon=None, item=None):
-        self._tray_queue.put(self.open_guide)
-
-    def _tray_toolbox(self, icon=None, item=None):
-        self._tray_queue.put(self.open_toolbox)
-
-    def _tray_about(self, icon=None, item=None):
-        self._tray_queue.put(self.open_about)
-
-    def _tray_quit(self, icon=None, item=None):
-        self._tray_queue.put(self.quit_app)
-
-    def _refresh_tray_menu(self):
-        if self.tray_icon is not None:
-            try:
-                self.tray_icon.update_menu()
-            except Exception:
-                pass
-
-    # ---------------- 状态动作 ---------------- #
-    def _toggle_visibility(self):
-        # 用户手动切换：清除自动隐藏标记，避免被自动逻辑立即拉回
-        self._auto_hidden = False
-        if self._hidden:
-            self._show_window()
-        else:
-            self._hide_window()
-
-    def _hide_window(self, auto=False):
-        try:
-            self.cfg["x"] = self.root.winfo_x()
-            self.cfg["y"] = self.root.winfo_y()
-        except tk.TclError:
-            pass
-        self._hidden = True
-        self._auto_hidden = bool(auto)
-        self.cfg["hidden"] = True
-        save_config(self.cfg)
-        try:
-            self.root.withdraw()
-        except tk.TclError:
-            pass
-
-    def _show_window(self):
-        self._hidden = False
-        self._auto_hidden = False
-        self.cfg["hidden"] = False
-        save_config(self.cfg)
-        try:
-            self.root.deiconify()
-            self.root.update()
-            # 钳制回可见工作区，防止窗口停在屏幕外或被任务栏/面板遮挡
-            self._restore_position()
-            self.root.update()
-            self._apply_bg_and_alpha()
-            self.root.lift()
-            # X11 下 deiconify 后立即 geometry 可能被吞，稍后补发一次
-            self.root.after(60, self._restore_position)
-            try:
-                self.root.attributes("-topmost", bool(self.cfg.get("topmost", True)))
-            except tk.TclError:
-                pass
-            self.root.focus_force()
-        except tk.TclError:
-            pass
-
-    # ---------------- 自动隐藏（Beta 0.6） ---------------- #
-    def _auto_hide_check(self):
-        """轮询检测名单中的进程是否运行，据此自动隐藏/显示窗口。"""
-        try:
-            ah = self.cfg.get("auto_hide", {})
-            if ah.get("enabled"):
-                running = any_process_running(ah.get("apps", []))
-                if running and not self._hidden:
-                    # 名单中有程序在运行 且 当前显示 → 自动隐藏
-                    self._hide_window(auto=True)
-                elif (not running) and self._hidden and self._auto_hidden:
-                    # 名单中无程序运行 且 之前是被自动隐藏的 → 自动恢复显示
-                    self._show_window()
-        except Exception as exc:
-            print("自动隐藏检测异常:", exc, file=sys.stderr)
-        try:
-            self.root.after(3000, self._auto_hide_check)
-        except tk.TclError:
-            pass
-
-    def _toggle_lock(self):
-        self.cfg["locked"] = not bool(self.cfg.get("locked", False))
-        save_config(self.cfg)
-        self._apply_bg_and_alpha()
-        self.rebuild_rows()
-        self.refresh()
-        self._refresh_tray_menu()
-        # 锁定时整窗鼠标穿透，解锁恢复（仅 Windows 生效，Linux 优雅跳过）
-        set_click_through(self.root, self.cfg["locked"])
-
-    def _toggle_topmost(self):
-        self.cfg["topmost"] = not bool(self.cfg.get("topmost", True))
-        try:
-            self.root.attributes("-topmost", self.cfg["topmost"])
-        except tk.TclError:
-            pass
-        save_config(self.cfg)
-        self._refresh_tray_menu()
-
-    # ---------------- 打开窗口 ---------------- #
-    def open_settings(self):
-        if self.settings_win is not None and self.settings_win.winfo_exists():
-            self.settings_win.lift()
-            self.settings_win.focus_force()
-            return
-        self.settings_win = SettingsWindow(self)
-
-    def open_about(self):
-        if self.about_win is not None and self.about_win.winfo_exists():
-            self.about_win.lift()
-            self.about_win.focus_force()
-            return
-        self.about_win = AboutWindow(self.root, self)
-
-    def open_text_settings(self):
-        if self.text_settings_win is not None and self.text_settings_win.winfo_exists():
-            self.text_settings_win.lift()
-            self.text_settings_win.focus_force()
-            return
-        self.text_settings_win = TextSettingsWindow(self.root, self)
-
-    def open_guide(self):
-        if self.guide_win is not None and self.guide_win.winfo_exists():
-            self.guide_win.lift()
-            self.guide_win.focus_force()
-            return
-        self.guide_win = GuideWindow(self.root, self)
-
-    def open_toolbox(self):
-        if self.toolbox_win is not None and self.toolbox_win.winfo_exists():
-            self.toolbox_win.lift()
-            self.toolbox_win.focus_force()
-            return
-        self.toolbox_win = ToolboxWindow(self.root, self)
-
-    def _open_add_dialog(self):
-        if self._is_locked():
-            return
-        dlg = AddItemDialog(self.root, self)
-        if dlg.result:
-            self.cfg["items"].append(dlg.result)
-            save_config(self.cfg)
-            self.rebuild_rows()
-            self.refresh()
-
-    def apply_all(self):
-        self._apply_bg_and_alpha()
-        self.rebuild_rows()
-        self.refresh()
-
-    # ---------------- 退出 ---------------- #
-    def quit_app(self):
-        LOG.info("退出程序")
-        try:
-            self.cfg["x"] = self.root.winfo_x()
-            self.cfg["y"] = self.root.winfo_y()
-            save_config(self.cfg)
-        except tk.TclError:
-            pass
-        if self.tray_icon is not None:
-            try:
-                self.tray_icon.stop()
-            except Exception:
-                pass
-        try:
-            self.root.destroy()
-        except tk.TclError:
-            pass
-
-    def run(self):
-        self.root.mainloop()
+from config import (
+    UI_FONT, MAX_DAYS, APP_VERSION, AUTHOR_NAME,
+    BG_DARK, BG_PANEL, FG_MAIN, FG_SUB, ACCENT, ENTRY_BG, LINK_COLOR,
+    GLASS_EDGE, BTN_BG, DEFAULT_COLORS, RANGE_KEYS,
+    BILI_URL, AFDIAN_URL, QQ_FEEDBACK, QQ_CHAT, GITHUB_URL,
+    make_button, center_window,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -1060,7 +48,6 @@ class NameItemDialog(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1103,7 +90,14 @@ class NameItemDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     def _pick_color(self):
@@ -1145,7 +139,6 @@ class TimeItemDialog(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1228,6 +221,9 @@ class TimeItemDialog(tk.Toplevel):
         btns = tk.Frame(body, bg=BG_PANEL)
         btns.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         make_button(btns, self.app.lang("delete"), self._delete).pack(side="left")
+        self.reset_btn = make_button(btns, self.app.lang("reset_base_today"),
+                                     self._reset_base)
+        self.reset_btn.pack(side="left", padx=(8, 0))
         make_button(btns, self.app.lang("done"), self._ok, primary=True).pack(side="right")
         make_button(btns, self.app.lang("cancel"), self._cancel).pack(side="right", padx=(0, 8))
 
@@ -1237,16 +233,25 @@ class TimeItemDialog(tk.Toplevel):
 
         self._update_state()
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     def _update_state(self):
         if self.mode_var.get() == "days":
             self.days_entry.configure(state="normal")
             self.date_entry.configure(state="disabled")
+            self.reset_btn.configure(state="normal")
         else:
             self.days_entry.configure(state="disabled")
             self.date_entry.configure(state="normal")
+            self.reset_btn.configure(state="disabled")
 
     def _pick_color(self):
         dlg = PickColorDialog(
@@ -1257,6 +262,31 @@ class TimeItemDialog(tk.Toplevel):
         if dlg.result:
             self.custom_color = dlg.result[0]
             self.color_choice.set("custom")
+
+    def _reset_base(self):
+        """把该条目的基准日重置为今天（连续打卡 / 重新计时用）。"""
+        # 如果用户同时也修改了输入框里的天数，一并应用
+        if self.mode_var.get() == "days":
+            try:
+                n = int(self.days_var.get().strip())
+                if not (0 <= n <= MAX_DAYS):
+                    raise ValueError
+            except ValueError:
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang("days_not_int"), parent=self)
+                return
+            self.item["days"] = n
+
+        self.item["base"] = today().isoformat()
+        save_config(self.app.cfg)
+
+        # 关键：必须调用 rebuild_rows 才能重新排序并强制刷新界面
+        self.app.rebuild_rows()
+        self.app.refresh()
+
+        messagebox.showinfo(self.app.lang("prompt"),
+                            self.app.lang("base_reset_done"), parent=self)
+        # 重置成功后直接关闭弹窗，让用户看到主界面的变化
+        self.destroy()
 
     def _ok(self):
         mode = self.mode_var.get()
@@ -1274,7 +304,7 @@ class TimeItemDialog(tk.Toplevel):
             try:
                 d = parse_date_str(self.date_var.get())
             except ValueError as exc:
-                messagebox.showwarning(self.app.lang("prompt"), str(exc), parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang(str(exc)), parent=self)
                 return
             delta = (d - today()).days
             if delta < 0:
@@ -1316,7 +346,6 @@ class AddItemDialog(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1382,7 +411,14 @@ class AddItemDialog(tk.Toplevel):
 
         self._update_state()
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     def _update_state(self):
@@ -1417,7 +453,7 @@ class AddItemDialog(tk.Toplevel):
             try:
                 d = parse_date_str(self.date_var.get())
             except ValueError as exc:
-                messagebox.showwarning(self.app.lang("prompt"), str(exc), parent=self)
+                messagebox.showwarning(self.app.lang("prompt"), self.app.lang(str(exc)), parent=self)
                 return
             delta = (d - t).days
             if delta < 0:
@@ -1459,7 +495,6 @@ class PickColorDialog(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1533,7 +568,14 @@ class PickColorDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     @staticmethod
@@ -1606,7 +648,6 @@ class TimerColorsDialog(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1659,7 +700,14 @@ class TimerColorsDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     def _pick(self, key):
@@ -1700,7 +748,6 @@ class DefaultSettingsWindow(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1759,7 +806,14 @@ class DefaultSettingsWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     def _color_row(self, body, row, label, choice_var, getter, setter):
@@ -1834,7 +888,6 @@ class TextSettingsWindow(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -1865,7 +918,14 @@ class TextSettingsWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
         center_window(self, parent)
-        self.grab_set()
+        self.update_idletasks()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
 
     def _open_default(self):
@@ -1943,7 +1003,10 @@ class GuideWindow(tk.Toplevel):
 
         self._render()
         center_window(self, parent)
-        self.grab_set()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
 
     def _steps(self):
         return self.app._lang_mgr.get_list("guide_steps")
@@ -2000,7 +1063,6 @@ class AboutWindow(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -2028,12 +1090,20 @@ class AboutWindow(tk.Toplevel):
         bottom = tk.Frame(self, bg=BG_PANEL)
         bottom.pack(fill="x", padx=16, pady=(6, 14))
         make_button(bottom, self.app.lang("close"), self.destroy, primary=True).pack(side="right")
+        make_button(bottom, self.app.lang("export_log"), self._export_log).pack(
+            side="right", padx=(0, 8))
 
         self.bind("<Escape>", lambda e: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         center_window(self, parent)
-        self.grab_set()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+    def _export_log(self):
+        self.app.export_log(parent=self)
 
     def _configure_tags(self):
         t = self.text
@@ -2064,7 +1134,7 @@ class AboutWindow(tk.Toplevel):
     def _fill_content(self):
         add = self.text.insert
 
-        add("end", APP_NAME + "\n", "title")
+        add("end", self.app.lang("app_title") + "\n", "title")
         add("end", f"{APP_VERSION}\n", "ver")
 
         add("end", self.app.lang("changelog") + "\n", "h")
@@ -2112,7 +1182,9 @@ class AboutWindow(tk.Toplevel):
                 webbrowser.open(payload)
                 self.status.configure(text=self.app.lang("browser_opened"))
             except Exception:
-                self.status.configure(text=self.app.lang("browser_failed", payload=payload))
+                msg = self.app.lang("browser_failed", payload=payload)
+                self.status.configure(text=msg)
+                messagebox.showwarning(self.app.lang("prompt"), msg, parent=self)
         try:
             self.after(2500, lambda: self.status.configure(text=""))
         except tk.TclError:
@@ -2136,7 +1208,6 @@ class ToolboxWindow(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(parent)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -2156,7 +1227,10 @@ class ToolboxWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         center_window(self, parent)
-        self.grab_set()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
 
     def _find_tool(self, exe):
         """工具位置：优先 exe 所在目录（单文件打包时才是真正的“程序目录”），
@@ -2217,7 +1291,6 @@ class AutoHideSettingsWindow(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(app.root)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -2225,7 +1298,10 @@ class AutoHideSettingsWindow(tk.Toplevel):
 
         self._build()
         center_window(self, app.root)
-        self.grab_set()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
 
     def _build(self):
         body = tk.Frame(self, bg=BG_PANEL)
@@ -2348,7 +1424,6 @@ class SettingsWindow(tk.Toplevel):
         self.configure(bg=BG_PANEL)
         self.resizable(False, False)
         try:
-            self.transient(app.root)
             self.attributes("-topmost", True)
         except tk.TclError:
             pass
@@ -2356,7 +1431,10 @@ class SettingsWindow(tk.Toplevel):
 
         self._build()
         center_window(self, app.root)
-        self.grab_set()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
 
     def _build(self):
         body = tk.Frame(self, bg=BG_PANEL)
@@ -2446,6 +1524,25 @@ class SettingsWindow(tk.Toplevel):
                 font=(UI_FONT, 10), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 2))
 
+        # Linux 极简模式（Beta 0.8）：纯色底板 / 半透明
+        if not sys.platform.startswith("win") and sys.platform != "darwin":
+            row_linux = tk.Frame(body, bg=BG_PANEL)
+            row_linux.pack(fill="x", pady=3)
+            tk.Label(row_linux, text=self.app.lang("linux_simple"), bg=BG_PANEL,
+                     fg=FG_MAIN, font=(UI_FONT, 10), width=15,
+                     anchor="w").pack(side="left")
+            self.linux_simple_var = tk.StringVar(
+                value="solid" if self.app.cfg.get("linux_simple_plate") else "alpha")
+            for t, v in ((self.app.lang("semi_transparent"), "alpha"),
+                         (self.app.lang("solid"), "solid")):
+                tk.Radiobutton(
+                    row_linux, text=t, value=v, variable=self.linux_simple_var,
+                    command=self._apply_linux_simple,
+                    bg=BG_PANEL, fg=FG_MAIN, selectcolor=ENTRY_BG,
+                    activebackground=BG_PANEL, activeforeground=FG_MAIN,
+                    font=(UI_FONT, 10), bd=0, highlightthickness=0,
+                ).pack(side="left", padx=(8, 0))
+
         # 边颜色 / 底板颜色（Beta 0.5）：选色即生效即保存
         self._add_color_row(body, self.app.lang("edge_color"), "edge_color", GLASS_EDGE)
         self._add_color_row(body, self.app.lang("plate_color"), "plate_color", BG_DARK)
@@ -2528,6 +1625,11 @@ class SettingsWindow(tk.Toplevel):
         save_config(self.app.cfg)
         self.app._apply_bg_and_alpha()
         self.app._apply_dwm_shadow()
+
+    def _apply_linux_simple(self):
+        self.app.cfg["linux_simple_plate"] = (self.linux_simple_var.get() == "solid")
+        save_config(self.app.cfg)
+        self.app._apply_bg_and_alpha()
 
     def _add_color_row(self, body, label, key, default):
         row = tk.Frame(body, bg=BG_PANEL)
@@ -2631,41 +1733,3 @@ class SettingsWindow(tk.Toplevel):
     def _cancel(self):
         self.destroy()
 
-
-# --------------------------------------------------------------------------- #
-def main():
-    # 高分屏：在创建任何窗口之前开启 DPI 感知
-    enable_dpi_awareness()
-    # 单实例检测：若已有实例在运行，弹窗提示后退出
-    if not acquire_instance_lock():
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            root.attributes("-topmost", True)
-        except tk.TclError:
-            pass
-        try:
-            _lm = LanguageManager.instance("zh")
-            messagebox.showwarning(
-                _lm.get("app_title"),
-                _lm.get("already_running"),
-                parent=root,
-            )
-        finally:
-            root.destroy()
-        sys.exit(0)
-    try:
-        # 旧版存档迁移：主目录的旧档复制到新存档位置（保留原文件）
-        migrate_legacy_config()
-        # 日志尽早初始化，之后发生的问题都能留痕
-        _cfg = load_config()
-        setup_logging(get_log_dir(_cfg))
-        LOG.info("启动 %s | 平台=%s | 存档=%s | 日志=%s",
-                 APP_VERSION, sys.platform, get_save_dir(), get_log_dir(_cfg))
-        CountdownApp().run()
-    finally:
-        release_instance_lock()
-
-
-if __name__ == "__main__":
-    main()

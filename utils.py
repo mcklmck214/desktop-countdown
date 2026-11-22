@@ -262,16 +262,16 @@ def clamp_to_work_area(x, y, w, h, fallback=None):
 def parse_date_str(text):
     s = text.strip()
     if not s:
-        raise ValueError("请输入日期")
+        raise ValueError("date_empty")
     m = re.match(r"^(\d{4})\s*\D+\s*(\d{1,2})\s*\D+\s*(\d{1,2})\s*\D*$", s)
     if m is None:
         m = re.match(r"^(\d{4})(\d{2})(\d{2})$", s)
     if m is None:
-        raise ValueError("日期格式应为 yyyy年mm月dd日")
+        raise ValueError("date_format")
     try:
         return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     except ValueError:
-        raise ValueError("日期不存在，请检查年月日")
+        raise ValueError("date_invalid")
 
 
 def item_remaining(item, t=None):
@@ -336,6 +336,7 @@ def set_auto_start(enable):
 # 日志（Beta 0.5 新增）
 # --------------------------------------------------------------------------- #
 LOG = logging.getLogger("wmxgj")
+LOG_NAME = "wmxgj.log"
 
 
 def _log_callback_exception(self, exc, val, tb):
@@ -349,13 +350,14 @@ def _log_excepthook(t, v, tb):
 
 
 def setup_logging(log_dir):
-    """初始化日志：log_dir/无名小工具.log，512KB 滚动保留 2 份，接管未捕获异常。"""
+    """初始化日志：log_dir/wmxgj.log，512KB 滚动保留 2 份，接管未捕获异常。"""
     LOG.setLevel(logging.INFO)
     try:
         os.makedirs(log_dir, exist_ok=True)
+        # delay=True：延迟到首条日志时再打开文件，避开 Tk/Pillow 初始化后的句柄异常
         handler = RotatingFileHandler(
-            os.path.join(log_dir, "无名小工具.log"),
-            maxBytes=512 * 1024, backupCount=2, encoding="utf-8")
+            os.path.join(log_dir, LOG_NAME),
+            maxBytes=512 * 1024, backupCount=2, encoding="utf-8", delay=True)
         handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
         LOG.addHandler(handler)

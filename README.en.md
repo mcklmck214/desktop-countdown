@@ -10,7 +10,7 @@
 
 A transparent countdown widget that stays in the corner of your desktop: a frameless little window that keeps an eye on multiple “days left” at once.
 
-> Current version: **Beta 0.7**
+> Current version: **Beta 0.8**
 
 ## Features
 
@@ -20,7 +20,7 @@ A transparent countdown widget that stays in the corner of your desktop: a frame
 - **Automatic sorting**: items are sorted by remaining days in ascending order, expired ones sink to the bottom
 - **Tiered colors**: today / within 3 days / within 7 days / within 30 days / within 365 days / within 1000 days, each with its own color, customizable
 - **Frameless floating window**: translucent dark plate + system shadow + Windows 11 rounded corners; draggable and lockable
-- **System tray**: show/hide, lock, settings, guide, toolbox, about
+- **System tray**: show/hide, lock, settings, guide, toolbox, about, export log
 - **Right-click menu**: add, settings, lock and hide directly from the main window
 - **Double-click to edit**: change name, time and color of an item
 - **Portable mode**: place a `portable.txt` next to the executable and saves go to the program folder instead of your home directory
@@ -74,7 +74,7 @@ Kali Linux (packaged build, Xfce desktop, settings and about):
 
 ![Kali](docs/screenshots/linux-kali.png)
 
-NOI Linux (Ubuntu 20.04 kernel; source run only with `python3 wmxgj_Beta0_7.py`):
+NOI Linux (Ubuntu 20.04 kernel; source run only with `python3 wmxgj_Beta0_8.py`):
 
 ![NOI Linux](docs/screenshots/linux-noi.png)
 
@@ -87,17 +87,17 @@ On Linux there is no `-transparentcolor` keying; the window is shown with a tran
 | Windows 11 | Verified; supports system rounded corners and DWM shadow |
 | Windows 10 | Verified |
 | Windows 8.1 | Verified |
-| Windows 7 / Vista | Windows 7 verified with Beta 0.7 (Python 3.8 build, 64-bit); Vista untested |
+| Windows 7 / Vista | Windows 7 verified with Beta 0.8 (Python 3.8 build, 64-bit); Vista untested |
 | Kali Linux | Verified; both full and lite packaged builds run |
 | Ubuntu 24.04 | Verified with the packaged build |
-| NOI Linux (Ubuntu 20.04) | Source only: the packaged build needs a newer glibc, use `python3 wmxgj_Beta0_7.py` |
+| NOI Linux (Ubuntu 20.04) | Source only: the packaged build needs a newer glibc, use `python3 wmxgj_Beta0_8.py` |
 
 ## Download
 
 | Channel | Link | Code |
 | --- | --- | --- |
 | GitHub Releases (recommended) | <https://github.com/mcklmck214/desktop-countdown/releases> | none |
-| Lanzou Cloud | <https://wwbjl.lanzout.com/b01i5ystif> | `stbw` |
+| Lanzou Cloud | <https://wwbjl.lanzout.com/b01i60gmid> | `stbw` |
 | EdgeCOS | <https://user.edgecos.com/s/NCxRhxJx> | none |
 | 123 Pan | <https://1845990486.share.123pan.cn/123pan/APOqTd-sZLFh> | none |
 | Quark Pan | <https://pan.quark.cn/s/a979bc4c2900?pwd=nbM1> | `nbM1` |
@@ -106,22 +106,27 @@ On Linux there is no `-transparentcolor` keying; the window is shown with a tran
 ## Run
 
 ```bash
-pip install pystray pillow
-python wmxgj_Beta0_7.py
+pip install -r requirements.txt
+python wmxgj_Beta0_8.py
 ```
 
 - Requires `tkinter` (standard library), `pystray`, `Pillow` (tray icon; if missing, the app falls back to keyboard shortcuts)
-- No taskbar icon appears after launch; everything starts from the **system tray**. If the tray is not visible, press `Ctrl+Shift+L` to toggle lock
+- No taskbar icon appears after launch; everything starts from the **system tray**. If the tray is not visible, press `Ctrl+Shift+L` to toggle lock or `Ctrl+Shift+N` to add a countdown (both shortcuts are enabled automatically on Linux lite builds without a tray)
+- On Linux, settings offers a "Linux simple mode": semi-transparent, or a solid plate (no transparency, for desktops without a compositor)
 - Linux packaged builds: Releases provides **full** (with GTK tray dependencies, about 123 MB) and **lite** (tray unavailable, automatic fallback, about 22 MB); `chmod +x` and run directly (verified on Kali / Ubuntu 24.04)
 
 ## Project layout
 
 ```
-wmxgj_Beta0_7.py  Main program: window, menus, dialogs, tray, single instance
-utils.py          Utilities: paths, dates, DPI, DWM shadow/rounded corners, multi-monitor work area, autostart
-storage.py        Config I/O: save location, atomic writes, portable mode
+wmxgj_Beta0_8.py  Main program: window, menus, tray, single instance, core logic
+config.py         Shared constants: version, colors, font detection, buttons, centering
+dialogs.py        All Toplevel dialogs
+i18n.py           Language manager
+utils.py          Utilities: paths, dates, DPI, DWM shadow/rounded corners, multi-monitor work area, autostart, logging
+storage.py        Config I/O: save location, atomic writes, portable mode, instance file lock
 lang.json         UI translations (zh / en / ja)
 image.png         Tray icon
+requirements.txt  Runtime dependencies (pystray, Pillow)
 OLD_FILES/        Historical sources and builds (archive only, not used at runtime)
 ```
 
@@ -135,6 +140,7 @@ OLD_FILES/        Historical sources and builds (archive only, not used at runti
 
 | Version | Highlights |
 | --- | --- |
+| Beta 0.8 | Fixed “n days later” countdown not decreasing, reset base date, export log, 10s process polling, Linux simple mode and shortcut fallback, font/DPI adaptation, modular split, cross-platform file lock, CI builds |
 | Beta 0.7 | Multi-language UI (zh / en / ja), language switch in settings, expanded changelog, Linux tray title fallback |
 | Beta 0.6 | Auto-hide by app list, list management in settings, Win7-compatible packaging |
 | Beta 0.5 | GitHub link on the About page, Linux full/lite builds |

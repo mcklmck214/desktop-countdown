@@ -10,7 +10,7 @@
 
 デスクトップの隅に常駐する透明なカウントダウンウィジェット。枠なしの小さなウィンドウで、複数の「あと何日」を同時に見守ります。
 
-> 現在のバージョン：**Beta 0.7**
+> 現在のバージョン：**Beta 0.8**
 
 ## 機能
 
@@ -20,7 +20,7 @@
 - **自動並べ替え**：残り日数の昇順で並び、期限切れは一番下へ
 - **段階別カラー**：今日 / 3 日以内 / 7 日以内 / 30 日以内 / 365 日以内 / 1000 日以内をそれぞれ色分け、カスタマイズ可能
 - **枠なしフローティングウィンドウ**：半透明の暗いプレート + システムシャドウ + Windows 11 の角丸。ドラッグとロックに対応
-- **システムトレイ**：表示/非表示、ロック、設定、使い方ガイド、ツールボックス、このアプリについて
+- **システムトレイ**：表示/非表示、ロック、設定、使い方ガイド、ツールボックス、このアプリについて、ログ書き出し
 - **右クリックメニュー**：メイン画面から追加・設定・ロック・非表示が可能
 - **ダブルクリックで編集**：名前・日時・色を変更
 - **ポータブルモード**：実行ファイルと同じ場所に `portable.txt` を置くと、保存先がユーザーホームではなくプログラムフォルダになります
@@ -74,7 +74,7 @@ Kali Linux（パッケージ版、Xfce デスクトップ、設定とこのア�
 
 ![Kali](docs/screenshots/linux-kali.png)
 
-NOI Linux（Ubuntu 20.04 カーネル。`python3 wmxgj_Beta0_7.py` でのソース実行のみ）：
+NOI Linux（Ubuntu 20.04 カーネル。`python3 wmxgj_Beta0_8.py` でのソース実行のみ）：
 
 ![NOI Linux](docs/screenshots/linux-noi.png)
 
@@ -87,17 +87,17 @@ Linux では `-transparentcolor` による背景抜きができないため、�
 | Windows 11 | 検証済み。システムの角丸と DWM シャドウに対応 |
 | Windows 10 | 検証済み |
 | Windows 8.1 | 検証済み |
-| Windows 7 / Vista | Windows 7 は Beta 0.7（Python 3.8 ビルド、64 ビット）で検証済み。Vista は未検証 |
+| Windows 7 / Vista | Windows 7 は Beta 0.8（Python 3.8 ビルド、64 ビット）で検証済み。Vista は未検証 |
 | Kali Linux | 検証済み。full / lite どちらのパッケージ版も動作 |
 | Ubuntu 24.04 | 検証済み。パッケージ版を使用 |
-| NOI Linux（Ubuntu 20.04） | ソース実行のみ：パッケージ版は新しい glibc を要求するため `python3 wmxgj_Beta0_7.py` を使用 |
+| NOI Linux（Ubuntu 20.04） | ソース実行のみ：パッケージ版は新しい glibc を要求するため `python3 wmxgj_Beta0_8.py` を使用 |
 
 ## ダウンロード
 
 | チャネル | リンク | コード |
 | --- | --- | --- |
 | GitHub Releases（推奨） | <https://github.com/mcklmck214/desktop-countdown/releases> | 不要 |
-| 藍奏雲 | <https://wwbjl.lanzout.com/b01i5ystif> | `stbw` |
+| 藍奏雲 | <https://wwbjl.lanzout.com/b01i60gmid> | `stbw` |
 | EdgeCOS | <https://user.edgecos.com/s/NCxRhxJx> | 不要 |
 | 123 パン | <https://1845990486.share.123pan.cn/123pan/APOqTd-sZLFh> | 不要 |
 | Quark パン | <https://pan.quark.cn/s/a979bc4c2900?pwd=nbM1> | `nbM1` |
@@ -106,22 +106,27 @@ Linux では `-transparentcolor` による背景抜きができないため、�
 ## 実行
 
 ```bash
-pip install pystray pillow
-python wmxgj_Beta0_7.py
+pip install -r requirements.txt
+python wmxgj_Beta0_8.py
 ```
 
 - `tkinter`（標準ライブラリ）、`pystray`、`Pillow`（トレイアイコン。未導入時はキーボードショートカットへ自動フォールバック）が必要
-- 起動後はタスクバーアイコンが表示されず、すべて**システムトレイ**から操作します。トレイが見えない場合は `Ctrl+Shift+L` でロックを切り替え
+- 起動後はタスクバーアイコンが表示されず、すべて**システムトレイ**から操作します。トレイが見えない場合は `Ctrl+Shift+L` でロック切替、`Ctrl+Shift+N` で新規追加（トレイなしの Linux lite 版では自動的に有効）
+- Linux では設定で「Linux 簡易モード」を選択できます：半透明、または単色パネル（コンポジタなしのデスクトップ向け）
 - Linux パッケージ版：Releases で **full**（GTK トレイ依存込み、約 123 MB）と **lite**（トレイ不可・自動フォールバック、約 22 MB）を提供。`chmod +x` でそのまま実行可能（Kali / Ubuntu 24.04 で検証済み）
 
 ## ファイル構成
 
 ```
-wmxgj_Beta0_7.py  メインプログラム：ウィンドウ、メニュー、ダイアログ、トレイ、単一インスタンス
-utils.py          ユーティリティ：パス、日付、DPI、DWM シャドウ/角丸、マルチモニター作業領域、自動起動
-storage.py        設定入出力：保存先、アトミック書き込み、ポータブルモード
+wmxgj_Beta0_8.py  メインプログラム：ウィンドウ、メニュー、トレイ、単一インスタンス、コアロジック
+config.py         共有定数：バージョン、配色、フォント検出、ボタンと中央寄せ
+dialogs.py        すべての Toplevel ダイアログ
+i18n.py           多言語管理
+utils.py          ユーティリティ：パス、日付、DPI、DWM シャドウ/角丸、マルチモニター作業領域、自動起動、ログ
+storage.py        設定入出力：保存先、アトミック書き込み、ポータブルモード、単一インスタンス用ファイルロック
 lang.json          UI 翻訳（zh / en / ja）
 image.png         トレイアイコン
+requirements.txt  実行依存（pystray、Pillow）
 OLD_FILES/        過去バージョンのソースとビルド（アーカイブのみ、実行には不使用）
 ```
 
@@ -135,6 +140,7 @@ OLD_FILES/        過去バージョンのソースとビルド（アーカイ�
 
 | バージョン | 主な内容 |
 | --- | --- |
+| Beta 0.8 | 「n 日後」のカウントダウンが減らない不具合の修正と基準日リセット、ログ書き出し、プロセス検出を 10 秒間隔に、Linux 簡易モードとショートカットフォールバック、フォント/DPI 対応、モジュール分割、クロスプラットフォームのファイルロック、CI 自動ビルド |
 | Beta 0.7 | 多言語 UI（zh / en / ja）、設定に言語切り替え、更新履歴の拡充、Linux トレイタイトルのフォールバック |
 | Beta 0.6 | アプリ一覧による自動非表示、設定でのリスト管理、Win7 対応パッケージ |
 | Beta 0.5 | このアプリについてに GitHub リンク、Linux full/lite パッケージ |
